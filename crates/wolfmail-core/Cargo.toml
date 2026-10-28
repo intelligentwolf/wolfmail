@@ -1,0 +1,42 @@
+[package]
+name = "wolfmail-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+async-imap = { version = "0.12", default-features = false, features = ["runtime-tokio"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
+webpki-roots = "1"
+rustls-platform-verifier = "0.7"
+futures = "0.3"
+rusqlite = { version = "0.41", features = ["bundled"] }
+mail-parser = "1"
+mail-builder = "2"
+lettre = { version = "0.11", default-features = false, features = ["tokio1", "tokio1-rustls", "ring", "rustls-platform-verifier", "smtp-transport"] }
+ammonia = "4"
+keyring = "4"
+hickory-resolver = "0.26"
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "query", "rustls-no-provider", "charset", "http2"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
+sha2 = "0.11"
+base64 = "0.23"
+rand = "0.10"
+url = "2"
+quick-xml = { version = "0.42", features = ["serialize"] }
+regex = "1"
+tracing = "0.1"
+directories = "6"
+chrono = "0.4"
+html-escape = "0.3"
+linkify = "0.11"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tempfile = "3"
+wiremock = "0.6"

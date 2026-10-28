@@ -1,0 +1,97 @@
+# Builds WolfMail for every desktop platform on every push, so "works on Windows/macOS/Linux" is checked by a
+# real compile + bundle on each OS, not assumed.
+#
+# Action versions are pinned to commit SHAs (supply-chain rule, OWASP A03). Looked up 2026-10-28:
+#   actions/checkout       v7.0.1        3d3c42e5aac5ba805825da76410c181273ba90b1
+#   actions/setup-node     v7.1.0        949feb2413d6458794dcd2491c4babbbce0c15c1
+#   Swatinem/rust-cache    v2.9.3        d1527c8f67ef9af357290475d4af4b0fab8f12e0 (tag object 2201cc58… → commit)
+#   tauri-apps/tauri-action action-v1.0.0 1deb371b0cd8bd54025b384f1cd735e725c4060f
+# Linux packages: Tauri v2 prerequisites (tauri-docs src/content/docs/start/prerequisites.mdx, "apt install").
+# The Rust toolchain comes from rust-toolchain.toml (rustup installs it on first cargo call).
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: npm
+      - name: Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      - run: npm ci
+      - name: Typecheck UI
+        run: npx tsc --noEmit
+      - name: Build UI
+        run: npx vite build
+      - name: Clippy (warnings are errors)
+        run: |
+          rustup component add clippy
+          cargo clippy --workspace --all-targets -- -D warnings
+      - name: Engine unit tests
+        run: cargo test --workspace
+
+  bundle:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu 22.04 = glibc 2.35, so the .deb/.rpm/AppImage also run on older distros than the newest runner.
+          - os: ubuntu-22.04
+            args: "--bundles deb,rpm,appimage"
+            name: linux-x86_64
+          - os: windows-latest
+            args: "--bundles msi,nsis"
+            name: windows-x86_64
+          - os: macos-latest
+            args: "--target aarch64-apple-darwin --bundles dmg,app"
+            target: aarch64-apple-darwin
+            name: macos-apple-silicon
+          - os: macos-latest
+            args: "--target x86_64-apple-darwin --bundles dmg,app"
+            target: x86_64-apple-darwin
+            name: macos-intel
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: npm
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm
+      - name: Rust target
+        if: matrix.target != ''
+        shell: bash
+        run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+        with:
+          key: ${{ matrix.name }}
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f
+        env:
+          # OAuth app ids are build-time (option_env!). Unset = the app says sign-in isn't configured in this build.
+          WOLFMAIL_GOOGLE_CLIENT_ID: ${{ secrets.WOLFMAIL_GOOGLE_CLIENT_ID }}
+          WOLFMAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.WOLFMAIL_GOOGLE_CLIENT_SECRET }}
+          WOLFMAIL_MS_CLIENT_ID: ${{ secrets.WOLFMAIL_MS_CLIENT_ID }}
+        with:
+          args: ${{ matrix.args }}
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: "wolfmail-${{ matrix.name }}"

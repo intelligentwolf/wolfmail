@@ -1,0 +1,218 @@
+import * as React from "react";
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { AlertTriangle, RefreshCw } from "lucide-react";
+import { boot, getState, isOverviewWindow, openComposer, useStore } from "./lib/store";
+import { Overview } from "./features/overview/Overview";
+import { events } from "./lib/api";
+import { Toaster, notify } from "./lib/notify";
+import { displayName, parseAddresses } from "./lib/utils";
+import { Sidebar } from "./features/sidebar/Sidebar";
+import { MessageList } from "./features/list/MessageList";
+import { Reader } from "./features/reader/Reader";
+import { ComposerDock } from "./features/compose/Composer";
+import { newDraftFor } from "./features/compose/drafts";
+import { CommandPalette } from "./features/palette/CommandPalette";
+import { installShortcuts } from "./features/shortcuts";
+import { IwPanel } from "./features/iw/IwPanel";
+import { Welcome } from "./features/onboarding/Welcome";
+import { AddAccountDialog } from "./features/accounts/AddAccountDialog";
+import { ImportDialog } from "./features/accounts/ImportDialog";
+import { SettingsDialog } from "./features/settings/SettingsDialog";
+import { IwConnectDialog } from "./features/iw/IwConnectDialog";
+import { OutboxDialog } from "./features/outbox/OutboxDialog";
+import { EmptyState, Skeleton } from "./components/ui/misc";
+import { Button } from "./components/ui/button";
+
+function useTheme(): "light" | "dark" {
+  const pref = useStore((s) => s.settings?.theme ?? "system");
+  const [sys, setSys] = React.useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
+  React.useEffect(() => {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const h = () => setSys(mq.matches);
+    mq.addEventListener("change", h);
+    return () => mq.removeEventListener("change", h);
+  }, []);
+  const theme = pref === "system" ? (sys ? "dark" : "light") : pref;
+  React.useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);
+  return theme;
+}
+
+export function App() {
+  const ready = useStore((s) => s.ready);
+  const bootError = useStore((s) => s.bootError);
+  const hasAccounts = useStore((s) => s.accounts.length > 0);
+  const theme = useTheme();
+
+  React.useEffect(() => { void boot(); }, []);
+  React.useEffect(() => installShortcuts(), []);
+  useDesktopIntegration();
+
+  return (
+    <TooltipPrimitive.Provider delayDuration={350} skipDelayDuration={150}>
+      {!ready ? (
+        <BootSkeleton />
+      ) : bootError ? (
+        <div className="flex h-full items-center justify-center bg-surface">
+          <EmptyState tone="error" icon={<AlertTriangle className="size-6" />} title="WolfMail couldn't start its mail engine" body={bootError}
+            action={<Button onClick={() => window.location.reload()}><RefreshCw /> Try again</Button>} />
+        </div>
+      ) : isOverviewWindow() ? (
+        <div className="h-full"><Overview dark={theme === "dark"} /></div>
+      ) : hasAccounts ? (
+        <MailShell theme={theme} />
+      ) : (
+        <Welcome />
+      )}
+      <ComposerDock />
+      <CommandPalette />
+      <AddAccountDialog />
+      <ImportDialog />
+      <SettingsDialog />
+      <IwConnectDialog />
+      <OutboxDialog />
+      <Toaster theme={theme} />
+    </TooltipPrimitive.Provider>
+  );
+}
+
+function MailShell({ theme }: { theme: "light" | "dark" }) {
+  const readingPane = useStore((s) => s.settings?.readingPane ?? "right");
+  const iwOn = useStore((s) => !!s.iw?.connected && s.ui.iwPanel);
+  const openId = useStore((s) => s.openId);
+  const isOverview = useStore((s) => s.view.kind === "overview");
+  const [maxReader, setMaxReader] = React.useState(false);
+
+  React.useEffect(() => {
+    const h = () => setMaxReader(true);
+    window.addEventListener("wm:maximize-reader", h);
+    return () => window.removeEventListener("wm:maximize-reader", h);
+  }, []);
+  React.useEffect(() => {
+    if (!maxReader) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !document.querySelector('[role="dialog"][aria-modal="true"]')) setMaxReader(false);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [maxReader]);
+
+  // "Reading pane off": the list fills the window; Enter or double-click shows the reader full-size until Escape.
+  const showReaderOnly = maxReader && !!openId;
+  const reader = <Reader dark={theme === "dark"} maximized={maxReader} onToggleMax={() => setMaxReader((m) => !m)} />;
+  const handle = "w-px bg-border transition-colors hover:bg-[var(--iw-red)] data-[resize-handle-state=drag]:bg-[var(--iw-red)]";
+  const hHandle = "h-px bg-border transition-colors hover:bg-[var(--iw-red)] data-[resize-handle-state=drag]:bg-[var(--iw-red)]";
+
+  return (
+    <div className="h-full bg-surface-inset">
+      <PanelGroup direction="horizontal" autoSaveId="wm.layout.h">
+        <Panel id="sidebar" order={1} defaultSize={17} minSize={12} maxSize={30} className="min-w-[210px]">
+          <Sidebar />
+        </Panel>
+        <PanelResizeHandle className={handle} />
+        {isOverview ? (
+          <Panel id="overview" order={2} minSize={40}><Overview dark={theme === "dark"} /></Panel>
+        ) : showReaderOnly ? (
+          <Panel id="reader-max" order={2} minSize={40}>{reader}</Panel>
+        ) : readingPane === "bottom" ? (
+          <Panel id="main" order={2} minSize={40}>
+            <PanelGroup direction="vertical" autoSaveId="wm.layout.v">
+              <Panel id="list" order={1} defaultSize={42} minSize={20}><MessageList /></Panel>
+              <PanelResizeHandle className={hHandle} />
+              <Panel id="reader" order={2} minSize={25}>{reader}</Panel>
+            </PanelGroup>
+          </Panel>
+        ) : readingPane === "off" ? (
+          <Panel id="list-only" order={2} minSize={40}><MessageList /></Panel>
+        ) : (
+          <>
+            <Panel id="list" order={2} defaultSize={30} minSize={22} className="min-w-[320px]"><MessageList /></Panel>
+            <PanelResizeHandle className={handle} />
+            <Panel id="reader" order={3} minSize={30}>{reader}</Panel>
+          </>
+        )}
+        {iwOn && !isOverview && (
+          <>
+            <PanelResizeHandle className={handle} />
+            <Panel id="iw" order={4} defaultSize={20} minSize={15} maxSize={32} className="min-w-[260px]"><IwPanel /></Panel>
+          </>
+        )}
+      </PanelGroup>
+    </div>
+  );
+}
+
+function BootSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Starting WolfMail" className="flex h-full bg-surface-inset">
+      <div className="w-[17%] min-w-[210px] space-y-3 bg-surface p-4">
+        <Skeleton className="h-7 w-32" /><Skeleton className="h-10 w-full rounded-xl" />
+        {Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
+      </div>
+      <div className="w-[30%] space-y-4 border-l border-border bg-surface p-4">
+        <Skeleton className="h-6 w-40" /><Skeleton className="h-8 w-full" />
+        {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}
+      </div>
+      <div className="flex-1 border-l border-border bg-surface" />
+    </div>
+  );
+}
+
+/** Desktop glue: OS file drops into the composer, mailto: links, new-mail notifications. */
+function useDesktopIntegration() {
+  React.useEffect(() => {
+    const cleanups: (() => void)[] = [];
+    let disposed = false;
+    const keep = (p: Promise<() => void>) => p.then((u) => { if (disposed) u(); else cleanups.push(u); }).catch(() => { /* not running inside Tauri */ });
+
+    keep(getCurrentWebview().onDragDropEvent((ev) => {
+      if (ev.payload.type !== "drop") return;
+      if (!getState().composers.some((c) => !c.minimized)) {
+        if (ev.payload.paths.length) notify.info("Open a new message first, then drop files on it to attach them.");
+        return;
+      }
+      window.dispatchEvent(new CustomEvent("wm:files-dropped", { detail: ev.payload.paths }));
+    }));
+
+    keep(events.mailNew(async (e) => {
+      const s = getState();
+      if (!s.settings?.notifications || e.messages.length === 0) return;
+      try {
+        if (await getCurrentWindow().isFocused()) return;
+        let ok = await isPermissionGranted();
+        if (!ok) ok = (await requestPermission()) === "granted";
+        if (!ok) return;
+        const acct = s.accounts.find((a) => a.id === e.accountId);
+        if (e.messages.length === 1) {
+          const m = e.messages[0];
+          sendNotification({ title: displayName(m.from), body: `${m.subject || "(no subject)"}${acct ? ` · ${acct.name}` : ""}` });
+        } else {
+          sendNotification({ title: `${e.messages.length} new messages`, body: acct?.name ?? "WolfMail" });
+        }
+      } catch { /* notifications unavailable on this desktop; the unread counts still update */ }
+    }));
+
+    const onMailto = (e: Event) => {
+      const href = (e as CustomEvent<string>).detail;
+      try {
+        const u = new URL(href);
+        const to = parseAddresses(decodeURIComponent(u.pathname)).ok;
+        const d = newDraftFor(to);
+        d.subject = u.searchParams.get("subject") ?? "";
+        const cc = u.searchParams.get("cc");
+        if (cc) d.cc = parseAddresses(cc).ok;
+        const body = u.searchParams.get("body");
+        if (body) d.html = `<p>${body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>")}</p>`;
+        openComposer({ mode: "new", draft: d, quoteOnTop: true });
+      } catch (err) { notify.error(err, "Couldn't open that email link"); }
+    };
+    window.addEventListener("wm:mailto", onMailto);
+    cleanups.push(() => window.removeEventListener("wm:mailto", onMailto));
+
+    return () => { disposed = true; cleanups.forEach((c) => c()); };
+  }, []);
+}
+

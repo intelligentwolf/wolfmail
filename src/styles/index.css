@@ -1,0 +1,203 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Righteous — IntelligentWolf's title face (the logo wordmark). Source: intelligentwolf/src/styles/fonts.css:5-11. */
+@font-face {
+  font-family: "Righteous";
+  src: url("/fonts/righteous-regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* ─── Brand tokens ───────────────────────────────────────────────────────────
+   Values copied from IntelligentWolf's LIVE token blocks so WolfMail looks like the same product:
+   light  = intelligentwolf/src/styles/theme.css:1147-1257 (:root, the cream/plum/red set)
+   dark   = intelligentwolf/src/styles/theme.css:1263-1330 (.dark, Paul's greys of 9 Oct 2026)
+   radii / shadows / type = theme.css:1771-1797 (TailAdmin adoption, by role). */
+:root {
+  --iw-go: #15803d;
+  --iw-go-hover: #166534;
+  --iw-red: #c41e1e;
+  --iw-red-hover: #a81a1a;
+  --iw-red-wash: rgba(196, 30, 30, 0.08);
+  /* Red used as TEXT (dates, links, errors). Measured WCAG contrast: #c41e1e is 5.91:1 on white but 2.25:1 on the
+     dark surface #2e2f37, so dark mode gets #ff7a7a (5.27:1 on #2e2f37, 4.62:1 on #37383f). Fills keep --iw-red. */
+  --iw-red-text: #c41e1e;
+  /* Same idea for amber and green text: #c9a24b is 2.4:1 on white, #15803d is 2.65:1 on #2e2f37 (measured). */
+  --iw-warn-text: #8a6416;  /* 5.36:1 on white, 4.76:1 on #f6f1e7 */
+  --iw-go-text: #166534;
+  --iw-plum: #2d1b2d;
+  --iw-cream: #e6d5b8;
+  --iw-cream-soft: #f6f1e7;
+  --iw-surface: #ffffff;
+  --iw-surface-sunk: #eceaee;
+  --iw-ink: #17141a;
+  --iw-ink-soft: #6b6470;
+  --iw-line: rgba(45, 27, 45, 0.12);
+  --iw-paper: #fbf7ee;
+  --iw-warn: #c9a24b;
+
+  --background: var(--iw-surface);
+  --foreground: var(--iw-ink);
+  --card: var(--iw-surface);
+  --popover: var(--iw-surface);
+  --primary: var(--iw-red);
+  --primary-foreground: #ffffff;
+  --secondary: var(--iw-cream-soft);
+  --muted: var(--iw-cream-soft);
+  --muted-foreground: var(--iw-ink-soft);
+  --accent: var(--iw-cream-soft);
+  --destructive: var(--iw-red);
+  --border: var(--iw-line);
+  --input-background: var(--iw-cream-soft);
+  --switch-background: #cdc4ce;
+  --ring: rgba(196, 30, 30, 0.45);
+  --surface: var(--iw-surface);
+  --surface-raised: var(--iw-cream-soft);
+  --surface-inset: var(--iw-surface-sunk);
+  --pill-bg: var(--iw-plum);
+  --pill-fg: #ffffff;
+  --scrollbar-thumb: rgba(45, 27, 45, 0.16);
+  --scrollbar-thumb-hover: rgba(45, 27, 45, 0.28);
+  --select-bg: rgba(196, 30, 30, 0.08);
+  --select-bg-strong: rgba(196, 30, 30, 0.14);
+  --shadow-card: 0 1px 3px rgba(26, 20, 32, 0.08), 0 6px 16px rgba(26, 20, 32, 0.06);
+  --shadow-pop: 0px 20px 24px -4px rgba(16, 24, 40, 0.12), 0px 8px 8px -4px rgba(16, 24, 40, 0.05);
+
+  --radius: 0.75rem;
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  color-scheme: light;
+}
+
+.dark {
+  --iw-red: #c41e1e;
+  --iw-red-hover: #d93636;
+  --iw-red-wash: rgba(196, 30, 30, 0.16);
+  --iw-red-text: #ff7a7a;
+  --iw-warn-text: #c9a24b;  /* 5.55:1 on #2e2f37 */
+  --iw-go-text: #4ade80;    /* 7.64:1 on #2e2f37 */
+  --iw-plum: #4b4c53;
+  --iw-cream: #e0e6e6;
+  --iw-cream-soft: #37383f;
+  --iw-surface: #2e2f37;
+  --iw-surface-sunk: #1b1c24;
+  --iw-ink: #eceff1;
+  --iw-ink-soft: #a9adb4;
+  --iw-line: rgba(224, 230, 230, 0.14);
+  --iw-paper: #33343c;
+
+  --switch-background: #5a5c63;
+  --ring: rgba(196, 30, 30, 0.5);
+  --pill-bg: var(--iw-cream);
+  --pill-fg: #17141a;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.15);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
+  --select-bg: rgba(217, 54, 54, 0.16);
+  --select-bg-strong: rgba(217, 54, 54, 0.26);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 16px rgba(0, 0, 0, 0.28);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur: 0ms; }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-popover: var(--popover);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input-background: var(--input-background);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-inset: var(--surface-inset);
+  --color-pill-bg: var(--pill-bg);
+  --color-pill-fg: var(--pill-fg);
+  --color-go: var(--iw-go);
+  --color-warn: var(--iw-warn);
+  --color-plum: var(--iw-plum);
+  --color-select: var(--select-bg);
+  --color-select-strong: var(--select-bg-strong);
+  --color-brand-500: #dc2626;
+  --font-sans: "Inter Variable", "Inter", system-ui, -apple-system, sans-serif;
+  --font-title: "Righteous", "Inter Variable", system-ui, sans-serif;
+}
+
+@theme {
+  --shadow-theme-xs: 0px 1px 2px 0px rgba(16, 24, 40, 0.05);
+  --shadow-theme-sm: 0px 1px 3px 0px rgba(16, 24, 40, 0.1), 0px 1px 2px 0px rgba(16, 24, 40, 0.06);
+  --shadow-theme-md: 0px 4px 8px -2px rgba(16, 24, 40, 0.1), 0px 2px 4px -2px rgba(16, 24, 40, 0.06);
+  --shadow-theme-lg: 0px 12px 16px -4px rgba(16, 24, 40, 0.08), 0px 4px 6px -2px rgba(16, 24, 40, 0.03);
+  --shadow-focus-ring: 0px 0px 0px 4px rgba(196, 30, 30, 0.12);
+  --radius-control: 8px;
+  --radius-table: 12px;
+  --radius-card: 16px;
+  --radius-modal: 24px;
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-surface-inset text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input, textarea, [contenteditable="true"], .selectable { -webkit-user-select: text; user-select: text; }
+  /* Visible focus for keyboard users on anything a component forgets — WCAG 2.4.7.
+     Same rule IW uses (theme.css:1802-1807). */
+  :where(button, [role="button"], a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--iw-red);
+    outline-offset: 2px;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); background-clip: padding-box; border: 2px solid transparent; }
+}
+
+.font-title { font-family: var(--font-title); letter-spacing: 0.01em; }
+
+/* Tiptap compose editor */
+.wm-editor .ProseMirror { outline: none; min-height: 220px; line-height: 1.6; font-size: 14px; }
+.wm-editor .ProseMirror p { margin: 0 0 0.6em; }
+.wm-editor .ProseMirror ul { list-style: disc; padding-left: 1.4em; margin: 0 0 0.6em; }
+.wm-editor .ProseMirror ol { list-style: decimal; padding-left: 1.4em; margin: 0 0 0.6em; }
+.wm-editor .ProseMirror blockquote { border-left: 3px solid var(--iw-line); padding-left: 0.9em; color: var(--muted-foreground); margin: 0 0 0.6em; }
+.wm-editor .ProseMirror a { color: var(--iw-red-text); text-decoration: underline; }
+.wm-editor .ProseMirror h1 { font-size: 1.5em; font-weight: 700; margin: 0.4em 0; }
+.wm-editor .ProseMirror h2 { font-size: 1.25em; font-weight: 700; margin: 0.4em 0; }
+.wm-editor .ProseMirror code { background: var(--surface-raised); padding: 0 4px; border-radius: 4px; font-size: 0.92em; }
+.wm-editor .ProseMirror img { max-width: 100%; }
+.wm-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder); float: left; height: 0; pointer-events: none; color: var(--muted-foreground);
+}
+.wm-editor .ProseMirror .wm-quote { color: var(--muted-foreground); }
+
+@keyframes wm-shimmer { 0% { background-position: -400px 0; } 100% { background-position: 400px 0; } }
+.wm-skeleton {
+  background: linear-gradient(90deg, var(--surface-raised) 0%, var(--iw-surface-sunk) 40%, var(--surface-raised) 80%);
+  background-size: 800px 100%;
+  animation: wm-shimmer 1.4s linear infinite;
+  border-radius: 6px;
+}
+@keyframes wm-spin { to { transform: rotate(360deg); } }
+.wm-spin { animation: wm-spin 0.9s linear infinite; }

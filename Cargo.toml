@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/wolfmail-core", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "UNLICENSED"
+authors = ["IntelligentWolf Ltd <paul@wolf.uk.com>"]
+
+[profile.dev]
+debug = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 4
+strip = true

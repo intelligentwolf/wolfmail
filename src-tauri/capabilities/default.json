@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the WolfMail windows (main + All inboxes) may do: its own commands, open links/files, notifications, file dialogs, window state.",
+  "windows": ["main", "overview"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-is-focused",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "opener:default",
+    "notification:default",
+    "dialog:default",
+    "window-state:default"
+  ]
+}
