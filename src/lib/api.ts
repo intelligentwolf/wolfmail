@@ -46,6 +46,7 @@ export const api = {
   identityUpsert: (identity: Partial<Identity> & { accountId: string }) => call<Identity>("identity_upsert", { identity }),
   identityRemove: (id: string) => call<null>("identity_remove", { id }),
   oauthAuthorize: (provider: "google" | "microsoft", email: string) => call<{ email: string }>("oauth_authorize", { provider, email }),
+  oauthCancel: () => call<null>("oauth_cancel"),
 
   foldersList: (accountId?: string) => call<Folder[]>("folders_list", { accountId }),
   folderCreate: (accountId: string, name: string, parentId?: string) => call<Folder>("folder_create", { accountId, name, parentId }),

@@ -200,6 +200,14 @@ pub async fn authorize(
     authorize_scoped(http, secrets, provider, email, cfg(provider).scopes, &oauth_key(email), open_browser).await
 }
 
+/// Mail scopes and keychain key for `provider` / `email` (the same values `authorize` uses).
+pub fn mail_scopes(p: OAuthProvider) -> &'static str {
+    cfg(p).scopes
+}
+pub fn oauth_key_for(email: &str) -> String {
+    oauth_key(email)
+}
+
 /// Calendar & contacts sign-in (pim/): the same apps and flow as mail, a different scope set, and a separate
 /// keychain entry so mail and calendar grants can be revoked independently.
 /// Google: Calendar API v3 `auth/calendar` + People API `contacts.readonly` / `contacts.other.readonly` (Google

@@ -72,6 +72,8 @@ pub(crate) struct Inner {
     pub api_bases: crate::providers::ApiBases,
     /// Wakes the snooze task when a new snooze may be due sooner than it planned (rules.rs).
     pub snooze_wake: Notify,
+    /// Cancels a browser sign-in that is waiting for the provider (accounts.rs oauth_browser_flow).
+    pub oauth_cancel: Notify,
     /// Calendar & contacts (own store file + loops): crate::pim.
     pub pim: crate::pim::Pim,
 }
@@ -118,6 +120,7 @@ impl Engine {
                 outbox_wake: Notify::new(),
                 api_bases,
                 snooze_wake: Notify::new(),
+                oauth_cancel: Notify::new(),
                 pim,
             }),
         };

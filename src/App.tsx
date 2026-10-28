@@ -15,6 +15,7 @@ import { VaultGate } from "./features/onboarding/VaultGate";
 import { dailyUpdateCheck } from "./lib/updates";
 import { modalOpen } from "./lib/dom";
 import { SnoozeHost } from "./features/snooze/SnoozeHost";
+import { OAuthHost } from "./features/accounts/OAuthHost";
 import { startFilterFromMessage } from "./features/settings/FiltersPage";
 import type { MessageSummary } from "./lib/types";
 import { events } from "./lib/api";
@@ -95,6 +96,7 @@ export function App() {
       <IwConnectDialog />
       <OutboxDialog />
       <SnoozeHost />
+      <OAuthHost />
       {ready && !bootError && !vaultLocked && !isOverviewWindow() && <PimLayer />}
       <Toaster theme={theme} />
     </TooltipPrimitive.Provider>

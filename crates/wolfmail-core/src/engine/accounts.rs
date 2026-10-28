@@ -2,7 +2,7 @@
 // Source: docs/API.md commands accounts_* / account_* / identity_* / folder_* / tags_* / tag_upsert / oauth_authorize
 // / import_scan / import_apply.
 use super::Engine;
-use crate::error::{ApiError, Result};
+use crate::error::{ApiError, ErrorKind, Result};
 use crate::imap::conn::{connect, Credential};
 use crate::model::*;
 use crate::oauth::{self, OAuthProvider};
@@ -426,9 +426,9 @@ impl Engine {
     }
 
     pub async fn oauth_authorize(&self, provider: OAuthProvider, email: String) -> Result<String> {
-        let opener = self.inner.opener.clone();
-        let open = move |u: &str| opener(u);
-        let signed_in = oauth::authorize(&self.inner.http, self.inner.secrets.as_ref(), provider, &email, &open).await?;
+        let scopes = oauth::mail_scopes(provider);
+        let key = oauth::oauth_key_for(&email);
+        let signed_in = self.oauth_browser_flow(provider, &email, scopes, &key).await?;
         // Any account with this address that was waiting for sign-in can sync now.
         let accounts = self.accounts_list().await?;
         for a in accounts.iter().filter(|a| a.email.eq_ignore_ascii_case(&email) && a.enabled) {
@@ -436,6 +436,40 @@ impl Engine {
             self.spawn_runner(&a.id);
         }
         Ok(signed_in)
+    }
+
+    /// Browser sign-in with visible progress. Before the browser is asked to open, `oauth://pending` carries the
+    /// sign-in link so the UI can say what is happening and offer Copy link / Open again / Cancel — a desktop's
+    /// browser can open behind other windows or on another workspace, and `xdg-open` reports success even then
+    /// (seen on Paul's Hyprland desktop, 28 Oct 2026: WolfMail just "spun"). A failed browser launch no longer ends
+    /// the attempt: the link still works when pasted. `oauth://done` always follows. `oauth_cancel` stops waiting.
+    pub(crate) async fn oauth_browser_flow(&self, provider: OAuthProvider, email: &str, scopes: &str, key: &str) -> Result<String> {
+        let opener = self.inner.opener.clone();
+        let events = self.inner.events.clone();
+        let who = email.to_string();
+        let prov = match provider {
+            OAuthProvider::Google => "google",
+            OAuthProvider::Microsoft => "microsoft",
+        };
+        let open = move |u: &str| {
+            events.emit("oauth://pending", serde_json::json!({ "provider": prov, "email": who, "url": u }));
+            if let Err(e) = opener(u) {
+                tracing::warn!("could not open the browser for sign-in: {}", e.message);
+            }
+            Ok(())
+        };
+        let flow = oauth::authorize_scoped(&self.inner.http, self.inner.secrets.as_ref(), provider, email, scopes, key, &open);
+        let result = tokio::select! {
+            r = flow => r,
+            _ = self.inner.oauth_cancel.notified() => Err(ApiError::new(ErrorKind::Cancelled, "Sign-in was cancelled.")),
+        };
+        self.emit("oauth://done", serde_json::json!({ "email": email, "ok": result.is_ok() }));
+        result
+    }
+
+    /// Stop waiting for the browser (the Cancel button on the sign-in panel). Dropping the flow closes its listener.
+    pub fn oauth_cancel(&self) {
+        self.inner.oauth_cancel.notify_waiters();
     }
 
     // ---------------------------------------------------------------- folders

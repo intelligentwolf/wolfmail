@@ -184,9 +184,7 @@ impl Engine {
 
     /// Sign in to Google/Microsoft for calendar & contacts (browser flow; separate grant from mail).
     pub async fn pim_oauth_authorize(&self, provider: OAuthProvider, email: String) -> Result<String> {
-        let opener = self.inner.opener.clone();
-        let open = move |u: &str| opener(u);
-        oauth::authorize_scoped(&self.inner.http, self.inner.secrets.as_ref(), provider, &email, oauth::pim_scopes(provider), &oauth::pim_key(&email), &open).await
+        self.oauth_browser_flow(provider, &email, oauth::pim_scopes(provider), &oauth::pim_key(&email)).await
     }
 
     pub async fn pim_account_add(&self, input: NewPimAccount) -> Result<PimAccount> {

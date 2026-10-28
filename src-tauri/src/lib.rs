@@ -206,6 +206,15 @@ async fn identity_remove(s: State<'_, AppState>, id: String) -> R<()> {
     s.on(move |e| async move { e.identity_remove(id).await }).await
 }
 #[tauri::command]
+async fn oauth_cancel(s: State<'_, AppState>) -> R<()> {
+    s.on(move |e| async move {
+        e.oauth_cancel();
+        Ok(())
+    })
+    .await
+}
+
+#[tauri::command]
 async fn oauth_authorize(s: State<'_, AppState>, provider: OAuthProvider, email: String) -> R<Value> {
     s.on(move |e| async move { e.oauth_authorize(provider, email).await.map(|em| json!({ "email": em })) }).await
 }
@@ -548,6 +557,7 @@ pub fn run() {
             identity_upsert,
             identity_remove,
             oauth_authorize,
+            oauth_cancel,
             folders_list,
             folder_create,
             folder_rename,

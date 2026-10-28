@@ -134,6 +134,7 @@ type ImportCandidate = {
 | `accounts_reorder` | `{ ids }` | `null` |
 | `identity_upsert` | `Identity` (id optional) | `Identity` |
 | `identity_remove` | `{ id }` | `null` |
+| `oauth_cancel` | – | `null` — stops a waiting browser sign-in (it then fails with kind `cancelled`) |
 | `oauth_authorize` | `{ provider: "google"\|"microsoft", email }` | `{ email }` — opens system browser, PKCE + loopback redirect, stores refresh token in keychain under the email |
 | `folders_list` | `{ accountId? }` | `Folder[]` |
 | `folder_create` | `{ accountId, parentId?, name }` | `Folder` |
@@ -203,6 +204,8 @@ dir: Argon2id-derived key, XChaCha20-Poly1305, primary password (see `crates/wol
 | `mail://changed` | `{ folderIds: string[] }` — UI re-queries the visible view if it intersects |
 | `mail://new` | `{ accountId, folderId, messages: MessageSummary[] }` — drives notifications + tray badge |
 | `outbox://changed` | `OutboxItem` |
+| `oauth://pending` | `{ provider: "google"\|"microsoft", email, url }` — browser sign-in started; the UI shows the link with Open again / Copy / Cancel |
+| `oauth://done` | `{ email, ok }` — the sign-in finished, failed or was cancelled |
 | `undoable` | `{ token, label, expiresAt }` |
 | `counts://changed` | `{ unreadInbox: number }` (unified, enabled accounts) |
 
