@@ -100,6 +100,7 @@ export const api = {
   iwLogEmail: (messageId: string, opts: { leadId?: string; contactId?: string; includeText?: boolean } = {}) =>
     call<{ leadId: string | null; contactId: string | null }>("iw_log_email", { messageId, leadId: opts.leadId, contactId: opts.contactId, includeText: opts.includeText }),
   iwExtractContact: (messageId: string) => call<IwExtract>("iw_ai", { action: "extractContact", messageId }),
+  iwSearchQuery: (question: string, today: string) => call<{ query: string; explanation: string; creditsUsed: number }>("iw_search_query", { question, today }),
   iwPeople: (emails: string[]) => call<Record<string, IwMatch>>("iw_people", { emails }),
   iwContactUpdate: (kind: "lead" | "contact", id: string, fields: Partial<Record<IwField, string>>, note?: string) =>
     call<IwPerson>("iw_contact_update", { kind, id, fields, note }),

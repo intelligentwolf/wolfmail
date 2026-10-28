@@ -30,7 +30,7 @@ const SIZE = 56;
 const WALK_FRAMES = 4;
 const WALK_FRAME_MS = 160;
 /** How far he wanders from his corner, and how fast (px/s; IntelligentWolf AlexOrbHost uses orbPx * 0.9). */
-const ROAM_PX = 120;
+const ROAM_PX = 40;
 const PACE = SIZE * 0.9;
 /** Poll a running turn every 2 s, for up to the server's turn timeout (php-api/lib/wolfmail.php WOLFMAIL_TURN_TIMEOUT 600 s). */
 const POLL_MS = 2000;

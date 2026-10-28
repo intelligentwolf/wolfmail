@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
-import { getState, openComposer, setState, setUi, setView, updateSettings, useStore } from "../../lib/store";
+import { getState, openComposer, openSearchHit, setUi, setView, updateSettings, useStore } from "../../lib/store";
 import type { SearchHit } from "../../lib/types";
 import { displayName, listDate } from "../../lib/utils";
 import { Avatar } from "../../components/ui/misc";
@@ -95,7 +95,7 @@ export function CommandPalette() {
                   {hits.length > 0 && (
                     <Command.Group heading="Messages" className={group}>
                       {hits.map((h) => (
-                        <Command.Item key={h.id} value={`msg-${h.id} ${q}`} onSelect={run(() => openHit(h))} className={`${item} h-14`}>
+                        <Command.Item key={h.id} value={`msg-${h.id} ${q}`} onSelect={run(() => openSearchHit(h))} className={`${item} h-14`}>
                           <Avatar address={h.from} size={30} />
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
@@ -112,6 +112,7 @@ export function CommandPalette() {
                   <Command.Group heading="Actions" className={group}>
                     <Command.Item value="all inboxes at once overview columns" onSelect={run(() => setView({ kind: "overview" }))} className={item}><LayoutGrid /> All inboxes at once</Command.Item>
                     <Command.Item value="all inboxes own window pop out overview" onSelect={run(() => api.overviewWindowOpen().catch((e) => notify.error(e, "Couldn't open the window")))} className={item}><AppWindow /> Open All inboxes in its own window</Command.Item>
+                    {IW_ENABLED && <Command.Item value="ask find email describe ai search" onSelect={run(() => window.dispatchEvent(new CustomEvent("wm:ask", { detail: q.trim() || null })))} className={item}><Sparkles /> Ask — find an email by describing it</Command.Item>}
                     <Command.Item value="new message compose write" onSelect={run(() => openComposer({ mode: "new", draft: newDraftFor(), quoteOnTop: true }))} className={item}><PenSquare /> New message</Command.Item>
                     <Command.Item value="check mail sync refresh" onSelect={run(() => api.syncNow().catch((e) => notify.error(e, "Couldn't start a sync")))} className={item}><RefreshCw /> Check for new mail</Command.Item>
                     <Command.Item value="reply" onSelect={run(() => A.reply(false))} className={item}><Mail /> Reply to the open message</Command.Item>
@@ -154,10 +155,4 @@ export function CommandPalette() {
   );
 }
 
-/** Open a search hit: switch to its folder and select it, so the reader and list stay in step. */
-async function openHit(h: SearchHit) {
-  await setView({ kind: "folder", folderId: h.folderId });
-  const row = getState().list.items.find((m) => m.id === h.id || m.threadId === h.threadId);
-  if (row) setState({ selected: [row.id], cursor: row.id, openId: row.id });
-  else notify.info("That message is further down this folder — type in the filter box to narrow the list.");
-}
+

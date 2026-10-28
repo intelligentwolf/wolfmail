@@ -32,6 +32,7 @@ import { installShortcuts } from "./features/shortcuts";
 import { IwPanel } from "./features/iw/IwPanel";
 import { UpdateContactHost } from "./features/iw/UpdateContactDialog";
 import { Assistant } from "./features/assistant/Assistant";
+import { AskPanel } from "./features/ask/AskPanel";
 import { IW_ENABLED } from "./lib/features";
 import { Welcome } from "./features/onboarding/Welcome";
 import { AddAccountDialog } from "./features/accounts/AddAccountDialog";
@@ -104,6 +105,7 @@ export function App() {
       {ready && !bootError && !vaultLocked && !isOverviewWindow() && <PimLayer />}
       {IW_ENABLED && ready && !bootError && !vaultLocked && !isOverviewWindow() && hasAccounts && pimMode === "mail" && <Assistant />}
       {IW_ENABLED && <UpdateContactHost />}
+      {IW_ENABLED && ready && !bootError && !vaultLocked && !isOverviewWindow() && <AskPanel />}
       <Toaster theme={theme} />
     </TooltipPrimitive.Provider>
   );

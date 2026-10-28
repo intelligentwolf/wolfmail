@@ -122,8 +122,8 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* The assistant wolf (features/assistant) sits over the left of this row: keep it clear of him. */}
-      <div className={cn("flex min-h-[52px] items-center gap-1 border-t border-border px-3 py-2", IW_ENABLED && showAssistant && "pl-[72px]")}>
+      {/* The assistant wolf (features/assistant) sits and wanders (ROAM_PX) over the left of this row: keep it clear of him. */}
+      <div className={cn("flex min-h-[52px] items-center gap-1 border-t border-border px-3 py-2", IW_ENABLED && showAssistant && "pl-[112px]")}>
         {IW_ENABLED && <IwBadge />}
         <div className="flex-1" />
         <IconButton label="Settings" shortcut={`${modKey}+,`} size="iconSm" onClick={() => setUi({ settings: "general" })}>

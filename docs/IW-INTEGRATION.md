@@ -52,6 +52,7 @@ never the request), and stops working when the user leaves the floor or disconne
 | `GET /wolfmail/person` | `?email=` | `IwPerson \| { kind: "none" }` |
 | `POST /wolfmail/people` | `{ emails: string[] }` (≤ 200) | `{ matches: { [email]: { kind, id, name, url } } }` — leads (own or extra address) win over contacts |
 | `POST /wolfmail/ai` | `{ action: "summarise"\|"draftReply"\|"triage"\|"extractContact", message: { subject, from, to, date, text }, thread?, instructions?, assistantName? }` | `{ text, creditsUsed }` (+ `fields`, `note` for extractContact); 402 `{ error: "no_credits" }` |
+| `POST /wolfmail/search-query` | `{ question, today, assistantName }` | `{ query, explanation, creditsUsed }` — WolfMail search syntax incl. `after:`/`before:`; only the question is sent |
 | `POST /wolfmail/log-email` | `{ direction, messageId, subject, from, fromName?, to, date, snippet, text?, leadId?, contactId? }` | `{ interactionId, leadId, contactId }` — a `communication_log` row, once per message id; nobody matched → a new lead via `POST /leads` |
 | `POST /wolfmail/contacts` | `{ email, fields }` | `IwPerson` (201) — a new lead via `POST /leads`; 409 if already there |
 | `PATCH /wolfmail/contact` | `{ kind: "lead"\|"contact", id, fields, note? }` | `IwPerson` — fields via `PATCH /leads/{id}` / `PATCH /contacts/{id}`, note as a History entry |

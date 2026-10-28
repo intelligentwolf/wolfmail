@@ -223,6 +223,11 @@ impl IwClient<'_> {
         self.call(reqwest::Method::POST, "/wolfmail/people", &[], Some(json!({ "emails": emails }))).await
     }
 
+    /// Turn a question into a WolfMail search query → `{ query, explanation, creditsUsed }`. Only the question is sent.
+    pub async fn search_query(&self, body: Value) -> Result<Value> {
+        self.call(reqwest::Method::POST, "/wolfmail/search-query", &[], Some(body)).await
+    }
+
     pub async fn contact_update(&self, body: Value) -> Result<Value> {
         self.call(reqwest::Method::PATCH, "/wolfmail/contact", &[], Some(body)).await
     }

@@ -409,3 +409,11 @@ export function closeComposer(key: string) {
 export function updateComposer(key: string, patch: Partial<Composer>) {
   setState((s) => ({ composers: s.composers.map((c) => (c.key === key ? { ...c, ...patch } : c)) }));
 }
+
+/** Open a search hit: switch to its folder and select it, so the reader and list stay in step. */
+export async function openSearchHit(h: { id: string; folderId: string; threadId: string }) {
+  await setView({ kind: "folder", folderId: h.folderId });
+  const row = state.list.items.find((m) => m.id === h.id || m.threadId === h.threadId);
+  if (row) setState({ selected: [row.id], cursor: row.id, openId: row.id });
+  else notify.info("That message is further down this folder — type in the filter box to narrow the list.");
+}

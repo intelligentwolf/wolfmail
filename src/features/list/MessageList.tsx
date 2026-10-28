@@ -2,13 +2,14 @@ import * as React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive, Trash2, Star, Paperclip, MailOpen, Mail, Search, X, Inbox, SearchX, AlertTriangle, CornerUpLeft, Forward,
-  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus,
+  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus, Sparkles,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "../../lib/notify";
 import type { IwMatch } from "../../lib/types";
 import { invalidatePeople, lookupPeople, otherParty, useIwMatch, useMyAddresses } from "../iw/people";
 import { api } from "../../lib/api";
+import { IW_ENABLED } from "../../lib/features";
 import {
   useStore, getState, selectRow, loadMore, setFilter, setSearch, reloadList, selectAll, folderById, accountById,
 } from "../../lib/store";
@@ -185,7 +186,8 @@ function QuickFilter() {
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="relative">
+      <div className="flex items-center gap-2">
+      <div className="relative min-w-0 flex-1">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <input
           ref={ref}
@@ -206,6 +208,13 @@ function QuickFilter() {
         ) : (
           <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded border border-border px-1 text-[10.5px] text-muted-foreground">/</kbd>
         )}
+      </div>
+      {IW_ENABLED && (
+        <Button type="button" variant="secondary" size="sm" className="h-8 shrink-0" title="Find an email by describing it"
+          onClick={() => window.dispatchEvent(new CustomEvent("wm:ask", { detail: search.trim() && !/\w+:/.test(search) ? search.trim() : null }))}>
+          <Sparkles className="text-[var(--iw-red-text)]" /> Ask
+        </Button>
+      )}
       </div>
       <div className="flex flex-wrap items-center gap-1.5">
         {chip("unread", "Unread", <Mail />)}

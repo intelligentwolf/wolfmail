@@ -166,7 +166,7 @@ type ImportCandidate = {
 | `send` | `DraftInput` | `OutboxItem` (queued; sent after `undoSendSeconds` or at `sendAt`) |
 | `outbox_list` | – | `OutboxItem[]` |
 | `outbox_cancel` | `{ id }` | `DraftInput` (returns it so the UI can reopen the composer). Waiting or failed items only; no event is emitted. |
-| `search` | `{ query, accountId?, limit? }` (limit default 50) | `SearchHit[]` (FTS5 over cached headers+bodies; supports `from:` `to:` `subject:` `has:attachment` `is:unread`) |
+| `search` | `{ query, accountId?, limit? }` (limit default 50) | `SearchHit[]` (FTS5 over cached headers+bodies; supports `from:` `to:` `cc:` `subject:` `has:attachment` `is:unread`/`read`/`starred` `tag:` `after:YYYY-MM-DD` (on or after) `before:YYYY-MM-DD` (before); the same syntax filters the list via `ViewQuery.search`) |
 | `contacts_suggest` | `{ prefix, limit? }` (limit default 8) | `Address[]` (from address book + addresses seen in mail, ranked by frequency/recency) |
 | `sync_now` | `{ accountId? }` | `null` |
 | `unsubscribe` | `{ messageId }` | `{ method: "oneClick"\|"mailto"\|"browser" }` |
@@ -183,6 +183,7 @@ type ImportCandidate = {
 | `iw_person` | `{ email }` | `IwPerson \| null` (see `docs/IW-INTEGRATION.md`) |
 | `iw_ai` | `{ action: "summarise"\|"draftReply"\|"triage"\|"extractContact", messageId, instructions? }` | `{ text, creditsUsed }`; extractContact adds `{ fields, note }` (the sender's details found in the email) |
 | `iw_log_email` | `{ messageId, leadId?, contactId?, includeText? }` | `{ leadId, contactId }` — `includeText` sends the whole text, not just the snippet |
+| `iw_search_query` | `{ question, today: "YYYY-MM-DD" }` | `{ query, explanation, creditsUsed }` — Ask: only the question is sent; the query is then run locally with `search` |
 | `iw_people` | `{ emails: string[] }` | `{ [email]: { kind, id, name, url } }` — only addresses are sent; batched by 200 |
 | `iw_contact_update` | `{ kind: "lead"\|"contact", id, fields, note? }` | `IwPerson` |
 | `iw_contact_create` | `{ email, fields }` | `IwPerson` (a new lead) |

@@ -206,6 +206,17 @@ impl Engine {
         Ok(Value::Object(out))
     }
 
+    /// Ask: the assistant turns a question into a search; WolfMail runs it locally (search.rs). `today` is the user's
+    /// local date (YYYY-MM-DD) so "last week" means their week.
+    pub async fn iw_search_query(&self, question: String, today: String) -> Result<Value> {
+        let q = question.trim();
+        if q.is_empty() {
+            return Err(ApiError::invalid("question", "Ask a question first."));
+        }
+        let body = json!({ "question": clip(q, 500), "today": today, "assistantName": self.settings_get().await?.assistant_name });
+        self.iw().search_query(body).await
+    }
+
     pub async fn iw_contact_update(&self, kind: String, id: String, fields: Value, note: Option<String>) -> Result<Value> {
         if kind != "lead" && kind != "contact" {
             return Err(ApiError::invalid("kind", "Unknown kind of person."));

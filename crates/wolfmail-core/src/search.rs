@@ -10,6 +10,18 @@ pub struct ParsedQuery {
     pub flagged: bool,
     pub attachments: bool,
     pub tag: Option<String>,
+    /// `after:YYYY-MM-DD` (on or after that day) and `before:YYYY-MM-DD` (before that day), local midnight in ms —
+    /// Gmail's meaning of the same operators, so a query the assistant writes reads the same in both.
+    pub after_ms: Option<i64>,
+    pub before_ms: Option<i64>,
+}
+
+/// Local midnight at the start of `YYYY-MM-DD`, in unix ms.
+fn day_start_ms(v: &str) -> Option<i64> {
+    use chrono::TimeZone;
+    let d = chrono::NaiveDate::parse_from_str(v.trim(), "%Y-%m-%d").ok()?;
+    let t = d.and_hms_opt(0, 0, 0)?;
+    chrono::Local.from_local_datetime(&t).earliest().map(|x| x.timestamp_millis())
 }
 
 fn tokens(s: &str) -> Vec<String> {
@@ -53,7 +65,7 @@ pub fn parse_query(s: &str) -> ParsedQuery {
     for t in tokens(s) {
         let lower = t.to_ascii_lowercase();
         let (key, val) = match lower.split_once(':') {
-            Some((k, _)) if ["from", "to", "subject", "has", "is", "tag", "cc"].contains(&k) => (k.to_string(), t[k.len() + 1..].to_string()),
+            Some((k, _)) if ["from", "to", "subject", "has", "is", "tag", "cc", "after", "before"].contains(&k) => (k.to_string(), t[k.len() + 1..].to_string()),
             _ => (String::new(), t.clone()),
         };
         match key.as_str() {
@@ -77,6 +89,8 @@ pub fn parse_query(s: &str) -> ParsedQuery {
             "is" if val.eq_ignore_ascii_case("read") => q.unread = Some(false),
             "is" if val.eq_ignore_ascii_case("flagged") || val.eq_ignore_ascii_case("starred") => q.flagged = true,
             "tag" if !val.is_empty() => q.tag = Some(val),
+            "after" if day_start_ms(&val).is_some() => q.after_ms = day_start_ms(&val),
+            "before" if day_start_ms(&val).is_some() => q.before_ms = day_start_ms(&val),
             _ => {
                 if let Some(v) = fts_term(&t) {
                     q.fts.push(v);
@@ -120,6 +134,14 @@ impl ParsedQuery {
             p.push(Value::Text(t.clone()));
             p.push(Value::Text(t.clone()));
         }
+        if let Some(a) = self.after_ms {
+            c.push("m.date >= ?".into());
+            p.push(Value::Integer(a));
+        }
+        if let Some(b) = self.before_ms {
+            c.push("m.date < ?".into());
+            p.push(Value::Integer(b));
+        }
         (c.join(" AND "), p)
     }
 }
@@ -137,6 +159,18 @@ mod tests {
         assert!(sql.contains("MATCH ?"));
         assert_eq!(p.len(), 1);
     }
+    #[test]
+    fn date_operators() {
+        let q = parse_query("from:sarah after:2026-10-21 before:2026-10-28 quote");
+        assert!(q.after_ms.is_some() && q.before_ms.is_some() && q.after_ms < q.before_ms);
+        let (sql, p) = q.to_sql();
+        assert!(sql.contains("m.date >= ?") && sql.contains("m.date < ?"));
+        assert_eq!(p.len(), 3);
+        // A malformed date is just a word.
+        let w = parse_query("after:soon");
+        assert!(w.after_ms.is_none() && w.fts.len() == 1);
+    }
+
     #[test]
     fn strips_injection_quotes() {
         let q = parse_query("a\"b OR c");
