@@ -2,12 +2,13 @@ import * as React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive, Trash2, Star, Paperclip, MailOpen, Mail, Search, X, Inbox, SearchX, AlertTriangle, CornerUpLeft, Forward,
-  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink,
+  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "../../lib/notify";
 import type { IwMatch } from "../../lib/types";
-import { lookupPeople, otherParty, useIwMatch, useMyAddresses } from "../iw/people";
+import { invalidatePeople, lookupPeople, otherParty, useIwMatch, useMyAddresses } from "../iw/people";
+import { api } from "../../lib/api";
 import {
   useStore, getState, selectRow, loadMore, setFilter, setSearch, reloadList, selectAll, folderById, accountById,
 } from "../../lib/store";
@@ -39,14 +40,6 @@ export function MessageList() {
   const layout = settings?.listLayout ?? "multiline";
   const compact = settings?.density === "compact";
   const rowH = layout === "table" ? (compact ? 30 : 36) : compact ? 70 : 84;
-
-  // Highlight people who are in IntelligentWolf: ask about the rows' addresses (only addresses go, batched and cached).
-  const iwConnected = useStore((s) => !!s.iw?.connected);
-  const mine = useMyAddresses();
-  React.useEffect(() => {
-    if (!iwConnected) return;
-    lookupPeople(list.items.map((m) => otherParty(m, mine)?.email ?? "").filter(Boolean));
-  }, [list.items, iwConnected, mine]);
 
   const parentRef = React.useRef<HTMLDivElement>(null);
   const virt = useVirtualizer({ count: list.items.length, getScrollElement: () => parentRef.current, estimateSize: () => rowH, overscan: 12 });
@@ -274,7 +267,13 @@ const Row = React.memo(function Row({
   const who = sentView || isDraft ? (m.to.length ? m.to.map((a) => displayName(a)).join(", ") : "(no recipients)") : displayName(m.from);
   const mtags = m.tags.map((k) => tags.find((t) => t.key === k)).filter(Boolean) as { key: string; name: string; color: string }[];
   const mine = useMyAddresses();
-  const iwMatch = useIwMatch(otherParty(m, mine)?.email);
+  const party = otherParty(m, mine)?.email;
+  const iwMatch = useIwMatch(party);
+  // Only rows on screen ask (the list is virtualised, so a row exists only while it is visible): Paul, "we only have
+  // to deal with the emails the person can see". Asks made in the same tick go as one batch, and answers are cached.
+  const iwConnected = useStore((s) => !!s.iw?.connected);
+  const unknown = iwMatch === undefined;   // not asked yet, or forgotten (invalidatePeople) — ask again
+  React.useEffect(() => { if (iwConnected && party && unknown) lookupPeople([party]); }, [iwConnected, party, unknown]);
 
   const onClick = (e: React.MouseEvent) => {
     if (e.shiftKey) selectRow(m.id, "range");
@@ -407,6 +406,15 @@ const Row = React.memo(function Row({
   );
 });
 
+/** Put this email (its whole text) on the person's IntelligentWolf history; nobody there yet → a new lead. */
+async function logToCrm(id: string, match: IwMatch | null) {
+  try {
+    await api.iwLogEmail(id, { leadId: match?.kind === "lead" ? match.id : undefined, contactId: match?.kind === "contact" ? match.id : undefined, includeText: true });
+    invalidatePeople();   // a new lead changes who is highlighted; only the rows on screen ask again
+    notify.ok(match ? `Logged to ${match.name}'s history in IntelligentWolf` : "Logged — a new lead was created in IntelligentWolf");
+  } catch (e) { notify.error(e, "Couldn't log the email to IntelligentWolf"); }
+}
+
 /** "In IntelligentWolf" marker on a row: the person's kind in words, never colour alone (WCAG 1.4.1). */
 function IwBadge({ match }: { match: IwMatch }) {
   return (
@@ -455,11 +463,15 @@ function RowMenu({ m, isDraft, iwMatch }: { m: MessageSummary; isDraft: boolean;
               <Ctx.Item onSelect={() => window.dispatchEvent(new CustomEvent("wm:iw-update", { detail: m.id }))}>
                 <UserPen /> Update {iwMatch.name} from this email…
               </Ctx.Item>
+              <Ctx.Item onSelect={() => void logToCrm(m.id, iwMatch)}><BookmarkPlus /> Log this email to {iwMatch.name}'s history</Ctx.Item>
             </>
           ) : iwMatch === null ? (
-            <Ctx.Item onSelect={() => window.dispatchEvent(new CustomEvent("wm:iw-update", { detail: m.id }))}>
-              <UserPlus /> Add {displayName(person)} to IntelligentWolf…
-            </Ctx.Item>
+            <>
+              <Ctx.Item onSelect={() => window.dispatchEvent(new CustomEvent("wm:iw-update", { detail: m.id }))}>
+                <UserPlus /> Add {displayName(person)} to IntelligentWolf…
+              </Ctx.Item>
+              <Ctx.Item onSelect={() => void logToCrm(m.id, null)}><BookmarkPlus /> Log to CRM (creates a lead)</Ctx.Item>
+            </>
           ) : null}
         </>
       )}
