@@ -12,6 +12,7 @@ use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, Tray
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_window_state::StateFlags;
+use wolfmail_core::engine::rules::FilterRule;
 use wolfmail_core::engine::{DraftSaved, Engine, EngineConfig, EventSink};
 use wolfmail_core::error::{ApiError, ErrorKind};
 use wolfmail_core::model::*;
@@ -74,6 +75,35 @@ fn show_overview(app: &AppHandle) -> tauri::Result<()> {
         .min_inner_size(700.0, 480.0)
         .build()?;
     Ok(())
+}
+
+#[tauri::command]
+async fn filters_list(s: State<'_, AppState>) -> R<Vec<FilterRule>> {
+    s.on(move |e| async move { e.filters_list().await }).await
+}
+#[tauri::command]
+async fn filter_upsert(s: State<'_, AppState>, rule: FilterRule) -> R<FilterRule> {
+    s.on(move |e| async move { e.filter_upsert(rule).await }).await
+}
+#[tauri::command]
+async fn filter_delete(s: State<'_, AppState>, id: String) -> R<()> {
+    s.on(move |e| async move { e.filter_delete(id).await }).await
+}
+#[tauri::command]
+async fn filters_reorder(s: State<'_, AppState>, ids: Vec<String>) -> R<()> {
+    s.on(move |e| async move { e.filters_reorder(ids).await }).await
+}
+#[tauri::command]
+async fn filters_run(s: State<'_, AppState>, folder_id: String) -> R<u32> {
+    s.on(move |e| async move { e.filters_run(folder_id).await }).await
+}
+#[tauri::command]
+async fn messages_snooze(s: State<'_, AppState>, ids: Vec<String>, until: i64) -> R<()> {
+    s.on(move |e| async move { e.messages_snooze(ids, until).await }).await
+}
+#[tauri::command]
+async fn messages_unsnooze(s: State<'_, AppState>, ids: Vec<String>) -> R<()> {
+    s.on(move |e| async move { e.messages_unsnooze(ids).await }).await
 }
 
 #[tauri::command]
@@ -497,6 +527,13 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             overview_window_open,
             secrets_status,
+            filters_list,
+            filter_upsert,
+            filter_delete,
+            filters_reorder,
+            filters_run,
+            messages_snooze,
+            messages_unsnooze,
             secrets_create,
             secrets_unlock,
             accounts_list,

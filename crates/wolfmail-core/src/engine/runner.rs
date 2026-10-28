@@ -222,6 +222,8 @@ async fn run_api(engine: Engine, account_id: String, handle: Arc<AccountHandle>)
                     engine.emit_counts().await;
                 }
                 if !new_inbox.is_empty() {
+                    // Filters first; only what is still in the Inbox afterwards is announced.
+                    let new_inbox = engine.filters_on_new(&account_id, new_inbox).await;
                     let summaries = engine
                         .store()
                         .call(move |s| {
@@ -306,7 +308,8 @@ async fn pass(engine: &Engine, acct: &Account, conn: &mut Option<Conn>, inbox_on
             engine.emit("mail://changed", serde_json::json!({ "folderIds": [f.id.to_string()] }));
         }
         if f.role == Some(FolderRole::Inbox) && !out.new_ids.is_empty() {
-            let ids = out.new_ids.clone();
+            // Filters first; only what is still in the Inbox afterwards is announced.
+            let ids = engine.filters_on_new(&acct.id, out.new_ids.clone()).await;
             let summaries = engine
                 .store()
                 .call(move |s| {

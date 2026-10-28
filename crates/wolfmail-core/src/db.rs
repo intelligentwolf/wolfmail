@@ -185,6 +185,32 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX message_labels_folder ON message_labels(folder_id);
     "#,
+    // v3 — message filters and snooze (engine/rules.rs). Snoozes are local to this computer.
+    r#"
+    CREATE TABLE filters (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        account_id TEXT REFERENCES accounts(id) ON DELETE CASCADE,
+        match_all INTEGER NOT NULL DEFAULT 1,
+        conditions_json TEXT NOT NULL,
+        actions_json TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL
+    );
+    CREATE TABLE snoozes (
+        message_rowid INTEGER PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+        until_ms INTEGER NOT NULL
+    );
+    CREATE INDEX snoozes_until ON snoozes(until_ms);
+    -- Folder rows remember when they were created locally, so a folder-list reconcile that started before a folder
+    -- was created (e.g. Drafts made by the first draft save while a sync pass was listing) cannot delete it.
+    -- A trigger covers every insert path (IMAP list, folder_create, Gmail labels, Graph folders).
+    ALTER TABLE folders ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+    CREATE TRIGGER folders_created_at AFTER INSERT ON folders BEGIN
+        UPDATE folders SET created_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) WHERE id = NEW.id;
+    END;
+    "#,
 ];
 
 #[derive(Clone)]

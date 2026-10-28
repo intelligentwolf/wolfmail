@@ -1,6 +1,7 @@
 //! The engine: one object the Tauri layer holds. Owns the store, the per-account sync runners, the outbox worker
 //! and the IntelligentWolf client. Every public `async fn` here is one command in docs/API.md.
 // Source: docs/API.md "Commands" and "Events".
+pub mod rules;
 mod accounts;
 mod apiops;
 mod compose;
@@ -69,6 +70,8 @@ pub(crate) struct Inner {
     pub outbox_wake: Notify,
     /// Gmail / Graph API roots (production by default; tests point them at a local mock).
     pub api_bases: crate::providers::ApiBases,
+    /// Wakes the snooze task when a new snooze may be due sooner than it planned (rules.rs).
+    pub snooze_wake: Notify,
 }
 
 #[derive(Clone)]
@@ -111,6 +114,7 @@ impl Engine {
                 pair: Mutex::new(None),
                 outbox_wake: Notify::new(),
                 api_bases,
+                snooze_wake: Notify::new(),
             }),
         };
         compose::recover_outbox(&engine).await?;
@@ -120,6 +124,7 @@ impl Engine {
             }
         }
         compose::spawn_outbox_worker(engine.clone());
+        engine.spawn_snoozer();
         Ok(engine)
     }
 
@@ -203,7 +208,7 @@ impl Engine {
             .call(|c| {
                 Ok(c.query_row(
                     "SELECT COUNT(*) FROM messages m JOIN accounts a ON a.id=m.account_id
-                     WHERE m.seen=0 AND a.enabled=1
+                     WHERE m.seen=0 AND a.enabled=1 AND m.id NOT IN (SELECT message_rowid FROM snoozes)
                        AND (m.folder_id IN (SELECT id FROM folders WHERE role='inbox')
                             OR m.id IN (SELECT ml.message_rowid FROM message_labels ml JOIN folders f ON f.id=ml.folder_id WHERE f.role='inbox'))",
                     [],

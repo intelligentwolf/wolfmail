@@ -214,9 +214,11 @@ pub fn delete_row(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+/// Columns 0–20 read by `row_to_summary` (20 = snoozed_until). Queries that add their own columns after these
+/// start reading at index 21.
 pub const SUMMARY_COLS: &str = "m.id, m.account_id, m.folder_id, m.thread_id, m.message_id, m.subject, m.from_name, m.from_email,
     m.to_json, m.cc_json, m.date, m.snippet, m.seen, m.flagged, m.answered, m.forwarded, m.draft, m.keywords,
-    m.has_attachments, m.size";
+    m.has_attachments, m.size, (SELECT sz.until_ms FROM snoozes sz WHERE sz.message_rowid = m.id)";
 
 pub fn row_to_summary(r: &Row<'_>, thread_count: i64, thread_unread: i64) -> rusqlite::Result<MessageSummary> {
     let kw: String = r.get(17)?;
@@ -241,6 +243,7 @@ pub fn row_to_summary(r: &Row<'_>, thread_count: i64, thread_unread: i64) -> rus
         size: r.get(19)?,
         thread_count,
         thread_unread,
+        snoozed_until: r.get(20)?,
     })
 }
 
@@ -291,6 +294,7 @@ pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)
                     "m.flagged=1 AND {} AND {NOT_IN_TRASH_LABEL}",
                     member_of_roles_excluding("'trash','junk','all','flagged'")
                 )),
+                UnifiedView::Snoozed => clauses.push("m.id IN (SELECT message_rowid FROM snoozes)".into()),
                 UnifiedView::Unread => clauses.push(format!(
                     "m.seen=0 AND {} AND {NOT_IN_TRASH_LABEL}",
                     member_of_roles_excluding("'trash','junk','all','sent','drafts','flagged'")
@@ -319,6 +323,10 @@ pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)
             }
         }
         (None, None) => return Err(ApiError::invalid("folderId", "Choose a folder or a unified view.")),
+    }
+    // Snoozed messages are hidden everywhere except the Snoozed view until they come back.
+    if !matches!(q.unified, Some(UnifiedView::Snoozed)) {
+        clauses.push("m.id NOT IN (SELECT message_rowid FROM snoozes)".into());
     }
     if let Some(f) = &q.filter {
         if f.unread == Some(true) {
@@ -376,8 +384,8 @@ pub fn list_view(conn: &Connection, q: &ViewQuery) -> Result<MessagePage> {
         let mut stmt = conn.prepare(&sql)?;
         let items = stmt
             .query_map(params_from_iter(ps.iter()), |r| {
-                let n: i64 = r.get(20)?;
-                let u: i64 = r.get(21)?;
+                let n: i64 = r.get(21)?;
+                let u: i64 = r.get(22)?;
                 row_to_summary(r, n, u)
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -405,7 +413,7 @@ pub fn thread_messages(conn: &Connection, account_id: &str, thread_id: &str) -> 
          ORDER BY m.date ASC, m.id ASC"
     ))?;
     let rows = stmt
-        .query_map(params![account_id, thread_id], |r| Ok((row_to_summary(r, 1, 0)?, r.get::<_, String>(20)?)))?
+        .query_map(params![account_id, thread_id], |r| Ok((row_to_summary(r, 1, 0)?, r.get::<_, String>(21)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut out: Vec<(MessageSummary, String)> = Vec::new();
     for (m, role) in rows {

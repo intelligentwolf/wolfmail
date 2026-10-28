@@ -111,11 +111,13 @@ fn folder_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Folder> {
 
 // Counts cover a folder's own rows plus Gmail-API label members (message_labels); outside Trash/Spam a message that
 // carries the TRASH/SPAM label is not counted, as Gmail hides it from its other labels (msgstore::NOT_IN_TRASH_LABEL).
+// Snoozed messages (rules.rs) are hidden, so they are not counted as unread until they come back.
 // Two indexed sub-counts instead of one OR so SQLite can use messages_folder_date and message_labels_folder.
 const FOLDER_SQL: &str = "SELECT f.id, f.account_id, f.path, f.name, f.parent_id, f.role, f.selectable, f.depth,
-        (SELECT COUNT(*) FROM messages m WHERE m.folder_id=f.id AND m.seen=0 AND (COALESCE(f.role,'') IN ('trash','junk') OR NOT EXISTS
+        (SELECT COUNT(*) FROM messages m WHERE m.folder_id=f.id AND m.seen=0 AND m.id NOT IN (SELECT message_rowid FROM snoozes) AND (COALESCE(f.role,'') IN ('trash','junk') OR NOT EXISTS
             (SELECT 1 FROM message_labels xl JOIN folders xf ON xf.id=xl.folder_id WHERE xl.message_rowid=m.id AND xf.role IN ('trash','junk'))))
       + (SELECT COUNT(*) FROM message_labels ml JOIN messages m ON m.id=ml.message_rowid WHERE ml.folder_id=f.id AND m.seen=0
+            AND m.id NOT IN (SELECT message_rowid FROM snoozes)
             AND (COALESCE(f.role,'') IN ('trash','junk') OR NOT EXISTS
             (SELECT 1 FROM message_labels xl JOIN folders xf ON xf.id=xl.folder_id WHERE xl.message_rowid=m.id AND xf.role IN ('trash','junk')))),
         (SELECT COUNT(*) FROM messages m WHERE m.folder_id=f.id AND (COALESCE(f.role,'') IN ('trash','junk') OR NOT EXISTS

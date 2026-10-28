@@ -55,11 +55,12 @@ pub fn upsert_folder(c: &Connection, account_id: &str, f: &ApiFolder<'_>) -> Res
     Ok(id)
 }
 
-/// Remove folders of the account whose remote id is not in `keep` (deleted on the server).
-pub fn remove_folders_except(c: &Connection, account_id: &str, keep: &[String]) -> Result<Vec<i64>> {
+/// Remove folders of the account whose remote id is not in `keep` (deleted on the server). `listed_at` is when the
+/// list request was sent: folders created locally after it are not in `keep` yet and are left alone.
+pub fn remove_folders_except(c: &Connection, account_id: &str, keep: &[String], listed_at: i64) -> Result<Vec<i64>> {
     let rows: Vec<(i64, Option<String>)> = {
-        let mut st = c.prepare("SELECT id, remote_id FROM folders WHERE account_id=?1")?;
-        let v = st.query_map(params![account_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut st = c.prepare("SELECT id, remote_id FROM folders WHERE account_id=?1 AND created_at < ?2")?;
+        let v = st.query_map(params![account_id, listed_at], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
         v
     };
     let mut removed = Vec::new();

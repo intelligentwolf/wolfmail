@@ -315,7 +315,8 @@ impl Engine {
         }
         self.emit("mail://changed", serde_json::json!({ "folderIds": touched }));
         self.emit_counts().await;
-        if !moves.is_empty() || !api.is_empty() {
+        // Filters act on new mail by themselves; an Undo toast for a move nobody pressed would only confuse.
+        if (!moves.is_empty() || !api.is_empty()) && !super::rules::quiet() {
             let token = uuid::Uuid::new_v4().to_string();
             let expires_at = now_ms() + UNDO_MS;
             {

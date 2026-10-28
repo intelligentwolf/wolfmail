@@ -312,6 +312,7 @@ impl Graph<'_> {
     /// Sync the folder list. Returns (local id, remote id, role) for every folder, Inbox first.
     pub async fn sync_folders(&self) -> Result<Vec<(i64, String, Option<FolderRole>)>> {
         let roles = self.resolve_roles().await?;
+        let listed_at = now_ms();
         let tree = self.folder_tree().await?;
         let aid = self.account_id.to_string();
         self.store
@@ -329,7 +330,7 @@ impl Graph<'_> {
                     keep.push(f.id.clone());
                     out.push((id, f.id.clone(), role));
                 }
-                store::remove_folders_except(&tx, &aid, &keep)?;
+                store::remove_folders_except(&tx, &aid, &keep, listed_at)?;
                 tx.commit()?;
                 out.sort_by_key(|(_, _, r)| *r != Some(FolderRole::Inbox));
                 Ok(out)

@@ -74,6 +74,8 @@ pub fn role_from_name(path: &str, last: &str) -> Option<FolderRole> {
 }
 
 pub async fn sync_folder_list(conn: &mut Conn, store: &Store, account_id: &str) -> Result<Vec<FolderRef>> {
+    // Taken before LIST: folders created locally after this moment are not in the answer and must not be removed.
+    let listed_at = now_ms();
     let entries = conn.list_all().await?;
     let account_id = account_id.to_string();
     store
@@ -117,10 +119,10 @@ pub async fn sync_folder_list(conn: &mut Conn, store: &Store, account_id: &str) 
                     }
                 }
             }
-            // Folders gone from the server (deleted elsewhere).
+            // Folders gone from the server (deleted elsewhere) — but not ones created after LIST was sent.
             let existing: Vec<(i64, String)> = {
-                let mut st = tx.prepare("SELECT id, path FROM folders WHERE account_id=?1")?;
-                let rows = st.query_map(params![account_id], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+                let mut st = tx.prepare("SELECT id, path FROM folders WHERE account_id=?1 AND created_at < ?2")?;
+                let rows = st.query_map(params![account_id, listed_at], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
                 rows
             };
             for (id, path) in existing {
@@ -155,13 +157,31 @@ struct FolderState {
     max_uid: Option<u32>,
     min_uid: Option<u32>,
     local_count: i64,
+    /// UIDNEXT seen at the end of the last completed sync of this folder (None = never synced, or reset with
+    /// UIDVALIDITY). Anything at or above it arrived after that sync.
+    uidnext: Option<u32>,
+}
+
+impl FolderState {
+    /// Highest UID already accounted for. Uses the remembered UIDNEXT as well as the highest cached row, because a
+    /// folder emptied by archiving everything has no rows left — without UIDNEXT its next message would look like a
+    /// first sync and never be announced or filtered (found by tests/rules_greenmail.rs, 28 Oct 2026).
+    fn watermark(&self) -> Option<u32> {
+        match (self.max_uid, self.uidnext) {
+            (None, None) => None,
+            (m, n) => Some(m.unwrap_or(0).max(n.map(|n| n.saturating_sub(1)).unwrap_or(0))),
+        }
+    }
 }
 
 async fn load_state(store: &Store, folder_id: i64) -> Result<FolderState> {
     store
         .call(move |c| {
-            let (uv, ms): (Option<i64>, Option<i64>) =
-                c.query_row("SELECT uidvalidity, highest_modseq FROM folders WHERE id=?1", params![folder_id], |r| Ok((r.get(0)?, r.get(1)?)))?;
+            let (uv, ms, un): (Option<i64>, Option<i64>, Option<i64>) = c.query_row(
+                "SELECT uidvalidity, highest_modseq, uidnext FROM folders WHERE id=?1",
+                params![folder_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )?;
             let (mx, mn, n): (Option<i64>, Option<i64>, i64) =
                 c.query_row("SELECT MAX(uid), MIN(uid), COUNT(*) FROM messages WHERE folder_id=?1", params![folder_id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
             Ok(FolderState {
@@ -170,6 +190,7 @@ async fn load_state(store: &Store, folder_id: i64) -> Result<FolderState> {
                 max_uid: mx.map(|v| v as u32),
                 min_uid: mn.map(|v| v as u32),
                 local_count: n,
+                uidnext: un.map(|v| v as u32),
             })
         })
         .await
@@ -282,7 +303,7 @@ pub async fn sync_folder(conn: &mut Conn, store: &Store, ctx: &AccountCtx, folde
                 .call(move |c| {
                     c.execute("DELETE FROM messages_fts WHERE rowid IN (SELECT id FROM messages WHERE folder_id=?1)", params![fid])?;
                     c.execute("DELETE FROM messages WHERE folder_id=?1", params![fid])?;
-                    c.execute("UPDATE folders SET highest_modseq=NULL WHERE id=?1", params![fid])?;
+                    c.execute("UPDATE folders SET highest_modseq=NULL, uidnext=NULL WHERE id=?1", params![fid])?;
                     Ok(())
                 })
                 .await?;
@@ -345,7 +366,7 @@ pub async fn sync_folder(conn: &mut Conn, store: &Store, ctx: &AccountCtx, folde
 
     // 2. New messages above our highest UID (or, on first sync, the newest NEW_CHUNK by sequence number).
     let items = header_items(conn);
-    if let Some(max) = st.max_uid {
+    if let Some(max) = st.watermark() {
         if sel.uidnext.is_none_or(|n| n > max + 1) {
             // "n:*" always returns at least the highest message even when its UID < n (RFC 3501 §6.4.8), so rows at
             // or below `max` are skipped in store_rows.

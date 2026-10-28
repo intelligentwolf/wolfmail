@@ -239,6 +239,9 @@ pub struct MessageSummary {
     pub size: i64,
     pub thread_count: i64,
     pub thread_unread: i64,
+    /// Set while the message is snoozed (unix ms it comes back).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snoozed_until: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -311,6 +314,8 @@ pub enum UnifiedView {
     Archive,
     Flagged,
     Unread,
+    /// Messages snoozed on this computer (engine/rules.rs).
+    Snoozed,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

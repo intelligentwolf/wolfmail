@@ -210,7 +210,7 @@ pub fn thread_of(wolfmail_thread: &str) -> Option<&str> {
 
 /// Label folders: system labels by id, user labels by name with "/"-nesting (the delimiter Gmail's own IMAP
 /// service reports for labels). Returns remote-id → local folder id, plus the All Mail folder id.
-pub fn store_labels(c: &rusqlite::Connection, account_id: &str, labels: &[Label]) -> Result<(HashMap<String, i64>, i64)> {
+pub fn store_labels(c: &rusqlite::Connection, account_id: &str, labels: &[Label], listed_at: i64) -> Result<(HashMap<String, i64>, i64)> {
     let mut map = HashMap::new();
     let mut keep = vec![ALL_REMOTE.to_string()];
     let all = store::upsert_folder(
@@ -252,7 +252,7 @@ pub fn store_labels(c: &rusqlite::Connection, account_id: &str, labels: &[Label]
         map.insert(l.id.clone(), id);
         keep.push(l.id.clone());
     }
-    store::remove_folders_except(c, account_id, &keep)?;
+    store::remove_folders_except(c, account_id, &keep, listed_at)?;
     Ok((map, all))
 }
 
@@ -357,10 +357,11 @@ impl Gmail<'_> {
     }
 
     async fn label_maps(&self) -> Result<LabelMaps> {
+        let listed_at = now_ms();
         let labels = self.labels().await?;
         let aid = self.account_id.to_string();
         let names: HashMap<String, String> = labels.iter().filter(|l| is_user(l)).map(|l| (l.id.clone(), l.name.clone())).collect();
-        let (map, all) = self.store.call(move |c| store_labels(c, &aid, &labels)).await?;
+        let (map, all) = self.store.call(move |c| store_labels(c, &aid, &labels, listed_at)).await?;
         Ok((map, names, all))
     }
 
@@ -716,7 +717,7 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         s.with(|c| {
             seed(c);
-            let (map, all) = store_labels(c, "g", &labels())?;
+            let (map, all) = store_labels(c, "g", &labels(), i64::MAX)?;
             assert!(map.contains_key("INBOX") && map.contains_key("SPAM") && map.contains_key("Label_2"));
             assert!(!map.contains_key("UNREAD") && !map.contains_key("IMPORTANT") && !map.contains_key("CATEGORY_SOCIAL"));
             let role: String = c.query_row("SELECT role FROM folders WHERE id=?1", [map["SPAM"]], |r| r.get(0))?;
@@ -731,7 +732,7 @@ mod tests {
             assert_eq!(all_role, "all");
             // A label deleted on the server disappears locally.
             let fewer: Vec<Label> = labels().into_iter().filter(|l| l.id != "Label_1").collect();
-            let (map2, _) = store_labels(c, "g", &fewer)?;
+            let (map2, _) = store_labels(c, "g", &fewer, i64::MAX)?;
             assert!(!map2.contains_key("Label_1"));
             let n: i64 = c.query_row("SELECT COUNT(*) FROM folders WHERE remote_id='Label_1'", [], |r| r.get(0))?;
             assert_eq!(n, 0);
@@ -745,7 +746,7 @@ mod tests {
         let s = Store::open_in_memory().unwrap();
         s.with(|c| {
             seed(c);
-            let (map, all) = store_labels(c, "g", &labels())?;
+            let (map, all) = store_labels(c, "g", &labels(), i64::MAX)?;
             let names: HashMap<String, String> = [("Label_1".to_string(), "Clients".to_string())].into_iter().collect();
             let m: GMessage = serde_json::from_value(json!({
                 "id": "18c1", "threadId": "18c0", "labelIds": ["INBOX", "UNREAD", "Label_1"], "snippet": "Hi there",
