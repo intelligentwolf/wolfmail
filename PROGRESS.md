@@ -75,18 +75,27 @@ Microsoft — IW's Entra app (`MS_CLIENT_ID`), Microsoft Entra admin center → 
 
 ## Phases
 - [x] 0 Repo, Tauri skeleton, design system, contract
-- [x] 1 Engine core (storage, IMAP sync, folders, flags, move) — see limits below
+- [x] 1 Engine core (storage, IMAP sync, folders, flags, move)
 - [x] 2 Reading (sanitised HTML, remote blocking, trackers, attachments)
 - [x] 3 Compose + SMTP + outbox + drafts + identities
-- [~] 4 OAuth (code complete, untested without client ids), autodetect, import
-- [~] 5 Unified views, search, palette, tags, shortcuts, tray, notifications — written; partly exercised
-- [~] 6 IntelligentWolf client side done; server routes NOT built (needs Paul's go-ahead)
-- [ ] 7 Calendar (CalDAV/Google — Paul uses 6 calendars) + contacts (CardDAV)
-- [~] 8 Gmail API + Microsoft Graph adapters DONE (merged; mock-tested only, no real OAuth yet); filters, snooze open
-- [~] 9 Packaging: CI built all four platforms (run 40677185061; upload naming fixed after); Flatpak manifest + CI
-      job; signed updater wired (key generated, needs the repo secrets + release hosting decision above)
-- [x] 10 Linux without a Secret Service daemon: encrypted vault (Argon2id + XChaCha20-Poly1305) + primary password;
-      create / wrong password / unlock verified in the real app with the session bus unreachable
+- [~] 4 OAuth (PKCE, no secrets shipped; code complete, untested without client ids), autodetect, import
+- [x] 5 Unified views, All-inboxes window, search, palette, tags, shortcuts, tray, notifications
+- [~] 6 IntelligentWolf — client side built, hidden (VITE_WOLFMAIL_IW=1); server routes deferred by Paul
+- [x] 7 Calendar (CalDAV, Google Calendar API, Graph) + contacts (CardDAV, People API read-only, Graph); invites
+- [x] 8 Gmail API + Graph mail adapters (mock-tested), filters, snooze
+- [~] 9 Packaging: CI green on Windows/macOS arm64+x64/Linux deb·rpm·AppImage + Flatpak; signed updater wired —
+      needs the signing-key repo secrets, release hosting decision and code-signing certificates
+- [x] 10 Encrypted password vault for Linux without a Secret Service
+
+## Verification status (28 Oct 2026)
+- Unit: 80 tests. Integration (local containers): engine_greenmail, rules_greenmail (5/5 each on fresh
+  containers), imap_dovecot, Radicale calendar/contacts, providers_mock (wiremock Gmail/Graph).
+- Clicked in the real app (tauri-driver + WebKitWebDriver): settings, light theme, table layout, add account,
+  error states, folders, filter chips, palette, attachments, vault, filters editor + run, snooze, calendar event,
+  contact. Earlier: inbox, reader, threads, privacy banner, compose + send + undo, All-inboxes view and window.
+- NOT exercised: real Google/Microsoft sign-in and APIs (no client ids), TLS against real servers, Exchange,
+  send-later menu by pointer, drag-and-drop, notifications/tray clicks, calendar drag-to-move, invite card,
+  Windows/macOS at runtime (they build in CI but nobody has opened them).
 
 ## Known limitations (from the engine build)
 - No offline action queue (actions while offline return a visible network error).
@@ -95,6 +104,10 @@ Microsoft — IW's Entra app (`MS_CLIENT_ID`), Microsoft Entra admin center → 
 - No-CONDSTORE servers: full flag rescan only up to 20 000 messages per folder.
 - GreenMail dropped some connections ("End of stream"); engine went offline then recovered by itself. Re-check
   the connection pool against Dovecot/real servers.
+- Snoozes live on this computer only. Gmail can't empty Trash (needs the restricted mail.google.com scope).
+  Moving mail INTO a Microsoft 365 account from another account is refused (Graph only creates drafts from MIME).
+  Google contacts are read-only. Microsoft calendar keeps 180 days back / 540 days ahead.
+- Integration tests reuse-one-container runs can time out (GreenMail keeps dead test sessions); use a fresh container.
 
 ## UI click-through (WebDriver: tauri-driver + WebKitWebDriver, local GreenMail), 28 Oct
 Verified: settings (all sections, account page), light theme, table layout, add-account wizard end to end,
@@ -104,5 +117,7 @@ behind open dialogs (Radix sets no aria-modal). Not yet scripted: send-later men
 drag-drop, notifications, tray. Harness lives in ~/.cache/wolfmail-e2e (outside the repo).
 
 ## Session log
+- 2026-10-28 (2): private repo; providers (Gmail API/Graph), calendar & contacts merged; vault, updater, Flatpak,
+  filters, snooze; fixed Inbox-Zero new-mail bug, folder-reconcile race, shortcuts-behind-dialogs, snooze dialog.
 - 2026-10-28: plan; contract; engine + full UI; All-inboxes view + window; contrast tokens (measured WCAG);
   end-to-end run against local GreenMail; CI workflow.
