@@ -7,7 +7,8 @@
 # Secrets this workflow needs (set by Paul in the repo's Settings → Secrets):
 #   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD   from ~/.tauri/wolfmail.key(.password)
 #   WOLFMAIL_GOOGLE_CLIENT_ID / _SECRET, WOLFMAIL_MS_CLIENT_ID      OAuth app ids (optional; sign-in says "not set up" without)
-# Code signing (Windows Authenticode, Apple notarisation) is added once the certificates exist.
+#   AZURE_SIGNING_ENDPOINT, AZURE_SIGNING_ACCOUNT, AZURE_SIGNING_PROFILE, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET,
+#   AZURE_TENANT_ID   Windows code signing via Azure Artifact Signing (optional; unsigned without). No Apple signing.
 #
 # Action SHAs: see build.yml header (same pins).
 name: release
@@ -36,6 +37,9 @@ jobs:
             args: "--target x86_64-apple-darwin --bundles dmg,app"
             target: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
+    env:
+      AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
@@ -53,6 +57,24 @@ jobs:
         run: rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
       - run: npm ci
+      # Windows code signing — IntelligentWolf Ltd's Azure Artifact (Trusted) Signing account, the same Microsoft-issued
+      # identity that signs WolfViewer (signer "IntelligentWolf Ltd", issuer "Microsoft ID Verified CS EOC CA 03").
+      # Source: Tauri docs, distribute/sign/windows "Azure Artifact Signing" (artifact-signing-cli + bundle.windows.
+      # signCommand; AZURE_CLIENT_ID/SECRET/TENANT_ID from an App Registration with the signer role). Skipped, and the
+      # installers ship unsigned, until the AZURE_* secrets exist.
+      - name: Windows code signing (Azure Artifact Signing)
+        if: runner.os == 'Windows' && env.AZURE_SIGNING_ENDPOINT != '' && env.AZURE_CLIENT_ID != ''
+        shell: bash
+        env:
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+        run: |
+          cargo install artifact-signing-cli --version 0.12.0 --locked
+          printf '{"bundle":{"windows":{"signCommand":"artifact-signing-cli -e %s -a %s -c %s -d WolfMail %%1"}}}' \
+            "$AZURE_SIGNING_ENDPOINT" "$AZURE_SIGNING_ACCOUNT" "$AZURE_SIGNING_PROFILE" > src-tauri/tauri.sign.conf.json
+          echo "SIGN_ARGS=--config src-tauri/tauri.sign.conf.json" >> "$GITHUB_ENV"
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -61,6 +83,9 @@ jobs:
           WOLFMAIL_GOOGLE_CLIENT_ID: ${{ secrets.WOLFMAIL_GOOGLE_CLIENT_ID }}
           WOLFMAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.WOLFMAIL_GOOGLE_CLIENT_SECRET }}
           WOLFMAIL_MS_CLIENT_ID: ${{ secrets.WOLFMAIL_MS_CLIENT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "WolfMail ${{ github.ref_name }}"
@@ -68,7 +93,7 @@ jobs:
           releaseDraft: false
           prerelease: false
           uploadUpdaterJson: true
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} ${{ env.SIGN_ARGS }}
 
   # Checksums, build provenance and keyless signatures for every published file — the same as WolfStack's release
   # (Source: wolfscale/wolfstack/.github/workflows/release.yml "Compute SHA-256 checksums", "Generate build-provenance
