@@ -16,6 +16,7 @@ import { Dialog } from "../../components/ui/dialog";
 import { MessageBody } from "./MessageBody";
 import { MoveMenuItems } from "../list/MoveMenu";
 import * as A from "../actions";
+import { InviteCard } from "../calendar/InviteCard";
 
 export function Reader({ dark, maximized, onToggleMax }: { dark: boolean; maximized: boolean; onToggleMax: () => void }) {
   const openId = useStore((s) => s.openId);
@@ -256,6 +257,7 @@ function MessageCard({ summary, defaultOpen, dark, topRowId }: { summary: Messag
           <button type="button" className="font-medium text-[var(--iw-red-text)] hover:underline" onClick={() => A.unsubscribe(summary.id)}>Unsubscribe</button>
         </div>
       )}
+      {m?.invite && <InviteCard messageId={summary.id} invite={m.invite} />}
 
       {m && (m.remoteContentBlocked || m.trackersRemoved > 0) && !remoteLoaded && (
         <div className="mx-5 mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-surface-raised px-3 py-2 text-xs ring-1 ring-border">

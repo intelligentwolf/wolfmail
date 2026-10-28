@@ -5,6 +5,7 @@ import { modKey } from "../lib/utils";
 import { modalOpen } from "../lib/dom";
 import * as A from "./actions";
 import { newDraftFor } from "./compose/drafts";
+import { getPim } from "../lib/pim";
 
 // Single-key shortcuts follow Gmail/Superhuman conventions (j/k, e, r, a, f, s, u, #) because most switchers know
 // them (Jakob's law); Thunderbird's Ctrl+N / Ctrl+R / Ctrl+Shift+R / Ctrl+L / Delete / F5 are kept as well so
@@ -64,6 +65,8 @@ export function installShortcuts(): () => void {
     if (k === "F5") { e.preventDefault(); api.syncNow().catch((err) => notify.error(err, "Couldn't start a sync")); return; }
 
     if (typingTarget(e.target)) return;
+    // Calendar and Contacts have their own keys (lib/pim.ts); mail's single-key actions must not fire there.
+    if (getPim().mode !== "mail") return;
     // A dialog is open (Radix sets aria-modal on it) — let it own the keyboard.
     if (modalOpen()) return;
     if (s.composers.some((c) => !c.minimized) && (e.target as HTMLElement | null)?.closest?.('[role="dialog"]')) return;

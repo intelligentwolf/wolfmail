@@ -7,6 +7,10 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { boot, getState, isOverviewWindow, openComposer, useStore } from "./lib/store";
 import { Overview } from "./features/overview/Overview";
+import { usePim } from "./lib/pim";
+import { PimLayer } from "./features/pim/ModeSwitch";
+import { CalendarView } from "./features/calendar/CalendarView";
+import { ContactsView } from "./features/contacts/ContactsView";
 import { VaultGate } from "./features/onboarding/VaultGate";
 import { dailyUpdateCheck } from "./lib/updates";
 import { modalOpen } from "./lib/dom";
@@ -49,6 +53,7 @@ export function App() {
   const bootError = useStore((s) => s.bootError);
   const hasAccounts = useStore((s) => s.accounts.length > 0);
   const vaultLocked = useStore((s) => s.secrets?.backend === "file" && s.secrets.locked);
+  const pimMode = usePim((s) => s.mode);
   const theme = useTheme();
 
   React.useEffect(() => { void boot(); }, []);
@@ -69,7 +74,7 @@ export function App() {
         <VaultGate />
       ) : isOverviewWindow() ? (
         <div className="h-full"><Overview dark={theme === "dark"} /></div>
-      ) : hasAccounts ? (
+      ) : hasAccounts || pimMode !== "mail" ? (
         <MailShell theme={theme} />
       ) : (
         <Welcome />
@@ -81,6 +86,7 @@ export function App() {
       <SettingsDialog />
       <IwConnectDialog />
       <OutboxDialog />
+      {ready && !bootError && !vaultLocked && !isOverviewWindow() && <PimLayer />}
       <Toaster theme={theme} />
     </TooltipPrimitive.Provider>
   );
@@ -91,6 +97,7 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
   const iwOn = useStore((s) => !!s.iw?.connected && s.ui.iwPanel);
   const openId = useStore((s) => s.openId);
   const isOverview = useStore((s) => s.view.kind === "overview");
+  const pimMode = usePim((s) => s.mode);
   const [maxReader, setMaxReader] = React.useState(false);
 
   React.useEffect(() => {
@@ -106,6 +113,10 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [maxReader]);
+
+  // Calendar and Contacts take the whole window (their left column carries the same switcher).
+  if (pimMode === "calendar") return <div className="h-full"><CalendarView /></div>;
+  if (pimMode === "contacts") return <div className="h-full"><ContactsView /></div>;
 
   // "Reading pane off": the list fills the window; Enter or double-click shows the reader full-size until Escape.
   const showReaderOnly = maxReader && !!openId;

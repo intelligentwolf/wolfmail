@@ -247,3 +247,81 @@ dir: Argon2id-derived key, XChaCha20-Poly1305, primary password (see `crates/wol
   webhooks) and WolfMail has none. Bodies for the last `bodyDays` are prefetched (50 per pass).
 - Throttling: 429/503 (and Gmail's 403 rate-limit reasons) are retried up to 4 times, honouring `Retry-After`, else
   the account goes `offline` and retries with backoff.
+
+## Calendar & contacts
+
+Engine: `crates/wolfmail-core/src/pim/` with its **own store file `pim.sqlite3`** (own migration list in
+`pim/store.rs`), so it never takes a number in the mail store's migrations. Tauri: `src-tauri/src/pim_cmds.rs`.
+UI binding: `src/lib/pimApi.ts`, types `src/lib/pimTypes.ts` (mirror of `pim/model.rs`).
+
+```ts
+type PimKind = "local" | "dav" | "google" | "microsoft";
+type PimAccount = { id; kind; name; email?; url?; username?; enabled; status: "ok"|"syncing"|"authError"|"offline"|"error"; statusMessage?; lastSyncAt? };
+type Calendar = { id; accountId; name; color; visible; readOnly; isDefault; sortOrder };
+type Attendee = { email; name?; partstat: "NEEDS-ACTION"|"ACCEPTED"|"DECLINED"|"TENTATIVE"|"DELEGATED"; optional };
+type Event = { id; calendarId; uid; title; location; description; start; end /* exclusive; all-day = midnight UTC */;
+  allDay; timezone /* IANA or "" */; rrule? /* RRULE value */; exdates: number[]; recurrenceId? /* override */;
+  status: "CONFIRMED"|"TENTATIVE"|"CANCELLED"; organizer?: { email; name? }; attendees: Attendee[];
+  reminders: number[] /* minutes before */; sequence; readOnly };
+type Occurrence = { eventId; calendarId; title; location; start; end; allDay; color; recurring; occurrenceStart;
+  status; myPartstat?; readOnly; hasAttendees };
+type AddressBook = { id; accountId; name; readOnly };
+type Contact = { id; bookId; uid; fullName; givenName; familyName; org; title; emails: {label,value}[]; phones; addresses;
+  notes; birthday? /* "YYYY-MM-DD" | "--MM-DD" */; categories: string[]; photo? /* data: URL */; readOnly };
+type Invite = { method; uid; title; start; end; allDay; location; description; organizer?; attendees; recurrenceId?;
+  rrule?; sequence; myEmail?; myPartstat?; existingEventId?; conflicts: Occurrence[]; replyFrom? };
+```
+
+`MessageFull` gains `invite?: Invite` (set by `message_get` when the message has a text/calendar part).
+`DraftInput` gains `calendar?: { method, ics }` — sent as a `text/calendar; method=…` part (RFC 6047).
+
+| Command | Args | Returns |
+|---|---|---|
+| `pim_accounts_list` | – | `PimAccount[]` (always includes "On this computer", kind `local`) |
+| `pim_oauth_authorize` | `{ provider: "google"\|"microsoft", email }` | `{ email }` — calendar/contacts grant, stored separately from mail |
+| `pim_account_add` | `{ account: { kind, name, email?, url?, username?, password? } }` | `PimAccount` — DAV: discovery runs first; wrong password → `invalid` on `password`, bad address → `invalid` on `url`. Google/Microsoft: sign in first. |
+| `pim_account_update` | `{ id, patch: { name?, enabled?, url?, username? }, password? }` | `PimAccount` |
+| `pim_account_remove` | `{ id }` | `null` (local data only; nothing deleted on the server) |
+| `pim_sync_now` | `{ accountId? }` | `null` (with id: syncs now and returns its error, if any) |
+| `calendars_list` | – | `Calendar[]` (enabled accounts) |
+| `calendar_update` | `{ id, patch: { name?, color?, visible? } }` | `Calendar` |
+| `calendar_create` | `{ accountId, name, color? }` | `null` — local, DAV (MKCALENDAR), Google (`calendars.insert`), Graph |
+| `calendar_delete` | `{ id }` | `null` — local calendars only |
+| `events_range` | `{ from, to, calendarIds? }` | `Occurrence[]` — series expanded, overrides applied, ≤ ~400 days |
+| `event_get` | `{ id }` | `Event` |
+| `event_save` | `{ event, scope?: "this"\|"all", occurrenceStart? }` | `Event` — empty `id` creates. For a series, `occurrenceStart` is the clicked occurrence; "all" applies times as a shift. |
+| `event_delete` | `{ id, scope: "this"\|"all", occurrenceStart? }` | `null` |
+| `address_books_list` | – | `AddressBook[]` |
+| `contacts_list` | `{ bookId?, query?, limit? }` | `Contact[]` (FTS prefix search over name, email, company, phone, notes, groups) |
+| `contact_get` / `contact_save` / `contact_delete` | `{ id }` / `{ contact }` / `{ id }` | `Contact` / `Contact` / `null` — Google books are read-only (`invalid`) |
+| `contacts_import_vcf` | `{ bookId, path }` | number imported |
+| `contacts_export_vcf` | `{ ids, path }` | number exported (vCard 3.0) |
+| `invite_respond` | `{ messageId, response: "ACCEPTED"\|"TENTATIVE"\|"DECLINED", calendarId? }` | `null` |
+| `invite_apply` | `{ messageId }` | `null` — applies a CANCEL or a guest's REPLY to the matching event |
+| `pim_import_scan` | `{ profilePath? }` | `{ profilePath, items: { kind, name, url?, username?, color?, enabled, localEvents }[] }[]` |
+| `pim_import_apply` | `{ profilePath, items }` | `PimAccount[]` — Google/DAV accounts created in `authError` until signed in / password given |
+
+| Event | Payload |
+|---|---|
+| `pim://changed` | `{}` — refetch calendars/books/visible ranges |
+| `pim://status` | `{ accountId, status, message? }` |
+| `pim://notice` | `{ message }` — a local edit lost to a concurrent server change (server version kept) |
+| `calendar://reminder` | `{ eventId, title, start, allDay, location, minutes }` |
+
+Behaviour:
+- **Writes**: local → store; DAV/Google → store as dirty + immediate background push (works offline); Microsoft →
+  Graph directly, then re-read (series edits need the server).
+- **Conflicts**: DAV PUT/DELETE carry `If-Match`/`If-None-Match: *`; Google PATCH/DELETE carry `If-Match`. On 412 the
+  server copy wins and `pim://notice` says which item.
+- **Invitations sent**: events in local or DAV calendars that have guests get iMIP REQUEST / CANCEL mail from the
+  organizer identity when time, title, place, rule, guests or status change. Google (`sendUpdates=all`) and Microsoft
+  send their own. A DAV server doing RFC 6638 implicit scheduling would also mail guests (possible duplicate).
+- **Answering invitations**: an invite already in a Google calendar is answered by patching our attendee status
+  (Google notifies the organizer); in a Microsoft calendar by Graph `accept`/`tentativelyAccept`/`decline`;
+  otherwise by iMIP REPLY mail from the invited identity.
+- **Sync**: every 10 min, on `pim_sync_now`, and right after local edits; one sync per account at a time. DAV uses
+  RFC 6578 sync-collection (falls back to etag listing), Google `syncToken`, Graph a calendarView window of
+  −180…+540 days and a full contacts listing.
+- **Google** uses Calendar API v3 + People API with IntelligentWolf's approved scopes (`auth/calendar`,
+  `contacts.readonly`, `contacts.other.readonly`), so Google contacts are read-only. **Microsoft** needs
+  `Calendars.ReadWrite` and `Contacts.ReadWrite` on the Entra app.
