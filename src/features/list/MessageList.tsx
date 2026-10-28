@@ -2,20 +2,22 @@ import * as React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive, Trash2, Star, Paperclip, MailOpen, Mail, Search, X, Inbox, SearchX, AlertTriangle, CornerUpLeft, Forward,
-  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw,
+  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff,
 } from "lucide-react";
 import {
   useStore, getState, selectRow, loadMore, setFilter, setSearch, reloadList, selectAll, folderById, accountById,
 } from "../../lib/store";
 import type { MessageSummary, ViewFilter } from "../../lib/types";
+import { format } from "date-fns";
 import { cn, displayName, listDate } from "../../lib/utils";
 import { Avatar, Ctx, EmptyState, Skeleton, Menu } from "../../components/ui/misc";
 import { Button, IconButton } from "../../components/ui/button";
 import * as A from "../actions";
 import { MoveMenuItems } from "./MoveMenu";
+import { SnoozeItems } from "../snooze/SnoozeMenu";
 
 const viewTitles: Record<string, string> = {
-  inbox: "All inboxes", unread: "Unread", flagged: "Starred", drafts: "Drafts", sent: "Sent", archive: "Archive", junk: "Junk", trash: "Trash",
+  inbox: "All inboxes", unread: "Unread", snoozed: "Snoozed", flagged: "Starred", drafts: "Drafts", sent: "Sent", archive: "Archive", junk: "Junk", trash: "Trash",
 };
 
 export function MessageList() {
@@ -96,8 +98,13 @@ export function MessageList() {
               body={search ? `Nothing in ${title} matches “${search}”.` : "Nothing here matches the filters you picked."}
               action={<Button variant="outline" onClick={() => { setSearch(""); setFilter({}); }}>Clear filters</Button>} />
           ) : (
-            <EmptyState icon={<Inbox className="size-6" />} title={view.kind === "unified" && view.unified === "inbox" ? "Inbox zero" : `${title} is empty`}
-              body={view.kind === "unified" && view.unified === "inbox" ? "Every inbox is clear. New mail shows up here the moment it arrives." : "There are no messages in this folder."} />
+            view.kind === "unified" && view.unified === "snoozed" ? (
+              <EmptyState icon={<AlarmClock className="size-6" />} title="Nothing snoozed"
+                body="Snooze a conversation (press B, or right-click it) and it disappears until the time you choose, then comes back unread." />
+            ) : (
+              <EmptyState icon={<Inbox className="size-6" />} title={view.kind === "unified" && view.unified === "inbox" ? "Inbox zero" : `${title} is empty`}
+                body={view.kind === "unified" && view.unified === "inbox" ? "Every inbox is clear. New mail shows up here the moment it arrives." : "There are no messages in this folder."} />
+            )
           )
         ) : (
           <div style={{ height: virt.getTotalSize() + (layout === "table" ? 28 : 0), position: "relative" }}>
@@ -232,6 +239,10 @@ function BulkBar({ count }: { count: number }) {
       <IconButton label="Star" shortcut="S" size="iconSm" onClick={() => A.toggleFlag()}><Star /></IconButton>
       <IconButton label="Junk" shortcut="!" size="iconSm" onClick={() => A.junk(true)}><ShieldAlert /></IconButton>
       <Menu.Root>
+        <Menu.Trigger asChild><Button variant="ghost" size="sm"><AlarmClock /> Snooze</Button></Menu.Trigger>
+        <Menu.Content><SnoozeItems kind="menu" onPick={() => window.dispatchEvent(new CustomEvent("wm:snooze-pick"))} /></Menu.Content>
+      </Menu.Root>
+      <Menu.Root>
         <Menu.Trigger asChild><Button variant="ghost" size="sm"><FolderInput /> Move</Button></Menu.Trigger>
         <Menu.Content><MoveMenuItems kind="menu" onPick={(fid) => A.moveTo(fid)} /></Menu.Content>
       </Menu.Root>
@@ -323,9 +334,16 @@ const Row = React.memo(function Row({
             {m.flags.forwarded && <Forward className="size-3.5 shrink-0 text-muted-foreground" aria-label="Forwarded" />}
             <div className="flex-1" />
             {m.hasAttachments && <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-label="Has attachments" />}
-            <time className={cn("shrink-0 text-xs tabular-nums", unread ? "font-semibold text-[var(--iw-red-text)]" : "text-muted-foreground")} dateTime={new Date(m.date).toISOString()}>
-              {listDate(m.date)}
-            </time>
+            {m.snoozedUntil ? (
+              <span className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-[var(--iw-warn-text)]" title="Comes back then">
+                <AlarmClock className="size-3.5" aria-hidden /> {format(new Date(m.snoozedUntil), "EEE HH:mm")}
+                <span className="sr-only">snoozed until {new Date(m.snoozedUntil).toLocaleString()}</span>
+              </span>
+            ) : (
+              <time className={cn("shrink-0 text-xs tabular-nums", unread ? "font-semibold text-[var(--iw-red-text)]" : "text-muted-foreground")} dateTime={new Date(m.date).toISOString()}>
+                {listDate(m.date)}
+              </time>
+            )}
           </div>
           <div className="mt-0.5 flex items-center gap-2">
             <span className={cn("min-w-0 truncate text-[13px]", unread ? "font-semibold text-foreground" : "text-foreground/80")}>{m.subject || "(no subject)"}</span>
@@ -392,6 +410,10 @@ function RowMenu({ m, isDraft }: { m: MessageSummary; isDraft: boolean }) {
           </Ctx.Item>
         ))}
       </Ctx.Sub>
+      {m.snoozedUntil
+        ? <Ctx.Item onSelect={() => A.unsnooze([m.id])}><AlarmClockOff /> Un-snooze</Ctx.Item>
+        : <Ctx.Sub label="Snooze" icon={<AlarmClock />}><SnoozeItems kind="ctx" onPick={() => window.dispatchEvent(new CustomEvent("wm:snooze-pick"))} /></Ctx.Sub>}
+      <Ctx.Item onSelect={() => window.dispatchEvent(new CustomEvent("wm:filter-from", { detail: m }))}><Filter /> Create filter from this sender…</Ctx.Item>
       <Ctx.Sub label="Move to" icon={<FolderInput />}><MoveMenuItems kind="ctx" onPick={(fid) => A.moveTo(fid)} /></Ctx.Sub>
       <Ctx.Sub label="Copy to" icon={<FolderInput />}><MoveMenuItems kind="ctx" onPick={(fid) => A.copyTo(fid)} /></Ctx.Sub>
       <Ctx.Separator />

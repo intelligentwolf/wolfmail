@@ -3,7 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import {
   Archive, Trash2, CornerUpLeft, ReplyAll, Forward, Star, MailOpen, ShieldAlert, MoreHorizontal, FolderInput, Tag as TagIcon,
   Paperclip, Download, ExternalLink, ImageOff, ShieldCheck, Code, BellOff, ChevronDown, Mail, PanelRightOpen, PanelRightClose,
-  FileText, FileImage, FileArchive, FileSpreadsheet, Maximize2, Minimize2,
+  FileText, FileImage, FileArchive, FileSpreadsheet, Maximize2, Minimize2, AlarmClock, AlarmClockOff,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
@@ -15,6 +15,7 @@ import { Button, IconButton } from "../../components/ui/button";
 import { Dialog } from "../../components/ui/dialog";
 import { MessageBody } from "./MessageBody";
 import { MoveMenuItems } from "../list/MoveMenu";
+import { SnoozeItems } from "../snooze/SnoozeMenu";
 import * as A from "../actions";
 import { InviteCard } from "../calendar/InviteCard";
 
@@ -130,6 +131,14 @@ function Toolbar({ row, latestId, maximized, onToggleMax, iwPanel, iwConnected }
         <Star className={cn(row.flags.flagged && "fill-[var(--iw-warn-text)] text-[var(--iw-warn-text)]")} />
       </IconButton>
       <IconButton label="Mark as unread" shortcut="U" onClick={() => A.setRead(false, [row.id])}><MailOpen /></IconButton>
+      {row.snoozedUntil ? (
+        <IconButton label="Un-snooze" onClick={() => A.unsnooze([row.id])}><AlarmClockOff /></IconButton>
+      ) : (
+        <Menu.Root>
+          <IconButtonTrigger label="Snooze (B)"><AlarmClock /></IconButtonTrigger>
+          <Menu.Content><SnoozeItems kind="menu" ids={[row.id]} onPick={() => window.dispatchEvent(new CustomEvent("wm:snooze-pick", { detail: [row.id] }))} /></Menu.Content>
+        </Menu.Root>
+      )}
       <Menu.Root>
         <IconButtonTrigger label="More"><MoreHorizontal /></IconButtonTrigger>
         <Menu.Content align="end">

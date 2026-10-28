@@ -1,7 +1,7 @@
 import * as React from "react";
 import {
   Inbox, Send, FileText, Trash2, ShieldAlert, Archive, Star, MailOpen, Folder as FolderIcon, ChevronRight, PenSquare,
-  Plus, Settings as SettingsIcon, LayoutGrid, RefreshCw, AlertTriangle, WifiOff, Mails, CheckCheck, FolderPlus, Pencil, Upload,
+  Plus, Settings as SettingsIcon, LayoutGrid, AlarmClock, Filter, RefreshCw, AlertTriangle, WifiOff, Mails, CheckCheck, FolderPlus, Pencil, Upload,
 } from "lucide-react";
 import { useStore, getState, setView, toggleCollapsed, setUi, openComposer, refreshFolders } from "../../lib/store";
 import { moveTo, copyTo } from "../actions";
@@ -31,6 +31,7 @@ const unifiedItems: { id: UnifiedView; label: string; icon: React.ComponentType<
   { id: "archive", label: "Archive", icon: Archive },
   { id: "junk", label: "Junk", icon: ShieldAlert },
   { id: "trash", label: "Trash", icon: Trash2 },
+  { id: "snoozed", label: "Snoozed", icon: AlarmClock },
 ];
 
 export function Sidebar() {
@@ -287,6 +288,9 @@ function AccountTree({ account, folders }: { account: Account; folders: Folder[]
             </Ctx.Trigger>
             <Ctx.Content>
               <Ctx.Item onSelect={() => api.folderMarkRead(f.id).then(refreshFolders).catch((e) => notify.error(e, "Couldn't mark the folder read"))}><CheckCheck /> Mark all as read</Ctx.Item>
+              <Ctx.Item onSelect={() => api.filtersRun(f.id)
+                .then((n) => notify.ok(n === 0 ? `No filters matched anything in ${f.name}` : `Filters acted on ${n} message${n === 1 ? "" : "s"} in ${f.name}`))
+                .catch((e) => notify.error(e, "Couldn't run filters"))}><Filter /> Run filters on this folder</Ctx.Item>
               <Ctx.Item onSelect={() => setNewFolderFor(f)}><FolderPlus /> New subfolder…</Ctx.Item>
               {!f.role && <Ctx.Item onSelect={() => setRenaming(f)}><Pencil /> Rename…</Ctx.Item>}
               {!f.role && <><Ctx.Separator /><Ctx.Item danger onSelect={() => setDeleting(f)}><Trash2 /> Delete folder…</Ctx.Item></>}

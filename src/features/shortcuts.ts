@@ -30,6 +30,7 @@ export const SHORTCUTS: { keys: string; label: string; group: string }[] = [
   { group: "Act", keys: "# / Delete", label: "Delete" },
   { group: "Act", keys: "!", label: "Mark as junk" },
   { group: "Act", keys: "S", label: "Star / unstar" },
+  { group: "Act", keys: "B", label: "Snooze until…" },
   { group: "Act", keys: "U", label: "Mark read / unread" },
   { group: "Act", keys: "1 – 9", label: "Toggle tag 1–9" },
   { group: "Act", keys: "V", label: "Move to folder (palette)" },
@@ -118,6 +119,7 @@ export function installShortcuts(): () => void {
       case "#": case "Delete": e.preventDefault(); void A.trash(); return;
       case "!": e.preventDefault(); void A.junk(true); return;
       case "s": e.preventDefault(); void A.toggleFlag(); return;
+      case "b": if (s.selected.length) { e.preventDefault(); window.dispatchEvent(new CustomEvent("wm:snooze-pick")); } return;
       case "u": e.preventDefault(); void A.toggleRead(); return;
       case "v": e.preventDefault(); setUi({ palette: true }); window.dispatchEvent(new CustomEvent("wm:palette-mode", { detail: "move" })); return;
       case "i": e.preventDefault(); if (s.iw?.connected) setUi({ iwPanel: !s.ui.iwPanel }); return;

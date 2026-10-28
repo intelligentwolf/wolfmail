@@ -1,4 +1,6 @@
 import * as React from "react";
+import { Filter as FilterIcon } from "lucide-react";
+import { FiltersPage } from "./FiltersPage";
 import { checkForUpdate, installUpdate, restartApp, type UpdateState } from "../../lib/updates";
 import { IW_ENABLED } from "../../lib/features";
 import * as D from "@radix-ui/react-dialog";
@@ -36,6 +38,7 @@ export function SettingsDialog() {
       { id: "reading", label: "Reading", icon: BookOpen },
       { id: "compose", label: "Writing", icon: PenLine },
       { id: "tags", label: "Tags", icon: TagIcon },
+      { id: "filters", label: "Filters", icon: FilterIcon },
       { id: "shortcuts", label: "Keyboard shortcuts", icon: Keyboard },
     ] },
     { group: "Accounts", items: [
@@ -104,6 +107,7 @@ function Section({ id }: { id: string }) {
     case "tags": return <TagsPage />;
     case "iw": return IW_ENABLED ? <IwPage /> : null;
     case "shortcuts": return <ShortcutsPage />;
+    case "filters": return <FiltersPage />;
     case "about": return <AboutPage />;
     default: return <GeneralPage />;
   }

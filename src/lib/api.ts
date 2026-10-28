@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Account, AccountTest, Address, ApiError, Autodetected, DraftInput, Folder, Identity, ImportCandidate,
   IwBusinessMailbox, IwPerson, IwStatus, MailChangedEvent, MailNewEvent, MessageFull, MessagePage, MessageSummary,
-  OutboxItem, Provider, SearchHit, SecretsStatus, ServerConfig, Settings, SyncStatusEvent, Tag, UndoableEvent, ViewQuery, FlagName,
+  OutboxItem, Provider, SearchHit, SecretsStatus, FilterRule, ServerConfig, Settings, SyncStatusEvent, Tag, UndoableEvent, ViewQuery, FlagName,
 } from "./types";
 
 /** Every engine failure arrives as an ApiError (docs/API.md "Errors"). Anything else — a panic string, a Tauri
@@ -26,6 +26,13 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 export const api = {
   overviewWindowOpen: () => call<null>("overview_window_open"),
   secretsStatus: () => call<SecretsStatus>("secrets_status"),
+  filtersList: () => call<FilterRule[]>("filters_list"),
+  filterUpsert: (rule: FilterRule) => call<FilterRule>("filter_upsert", { rule }),
+  filterDelete: (id: string) => call<null>("filter_delete", { id }),
+  filtersReorder: (ids: string[]) => call<null>("filters_reorder", { ids }),
+  filtersRun: (folderId: string) => call<number>("filters_run", { folderId }),
+  snooze: (ids: string[], until: number) => call<null>("messages_snooze", { ids, until }),
+  unsnooze: (ids: string[]) => call<null>("messages_unsnooze", { ids }),
   secretsCreate: (password: string) => call<SecretsStatus>("secrets_create", { password }),
   secretsUnlock: (password: string) => call<SecretsStatus>("secrets_unlock", { password }),
   accountsList: () => call<Account[]>("accounts_list"),

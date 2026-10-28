@@ -38,6 +38,7 @@ export type MessageSummary = {
   subject: string; from: Address; to: Address[]; cc: Address[]; date: number;
   snippet: string; flags: Flags; tags: string[]; hasAttachments: boolean; size: number;
   threadCount: number; threadUnread: number;
+  snoozedUntil?: number; // unix ms; set while snoozed on this computer
 };
 
 export type Attachment = { id: string; filename: string; mime: string; size: number; inline: boolean; contentId?: string };
@@ -53,7 +54,7 @@ export type MessageFull = MessageSummary & {
   invite?: import("./pimTypes").Invite;
 };
 
-export type UnifiedView = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "flagged" | "unread";
+export type UnifiedView = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "flagged" | "unread" | "snoozed";
 export type ViewFilter = { unread?: boolean; flagged?: boolean; attachments?: boolean; tag?: string; fromContact?: string };
 export type ViewQuery = {
   folderId?: string; unified?: UnifiedView; filter?: ViewFilter; search?: string;
@@ -108,6 +109,19 @@ export type IwPerson = {
   timeline: { at: number; kind: "email" | "call" | "meeting" | "note" | "task" | "invoice"; title: string }[];
 };
 export type IwBusinessMailbox = { email: string; imapHost: string; imapPort: number; smtpHost: string; smtpPort: number };
+
+// Filters (engine/rules.rs). Field/op/action names are the engine's serde names.
+export type FilterField = "from" | "to" | "cc" | "toOrCc" | "anyAddress" | "subject" | "hasAttachment";
+export type FilterOp = "contains" | "notContains" | "is" | "isNot" | "beginsWith" | "endsWith" | "matchesRegex" | "isTrue" | "isFalse";
+export type FilterCondition = { field: FilterField; op: FilterOp; value: string };
+export type FilterAction =
+  | { type: "moveTo"; folderId: string } | { type: "copyTo"; folderId: string }
+  | { type: "markRead" } | { type: "star" } | { type: "tag"; tag: string }
+  | { type: "archive" } | { type: "trash" } | { type: "junk" } | { type: "stop" };
+export type FilterRule = {
+  id: string; name: string; enabled: boolean; accountId?: string | null; matchAll: boolean;
+  conditions: FilterCondition[]; actions: FilterAction[]; sortOrder: number;
+};
 
 export type SecretsStatus = { backend: "keychain" | "file"; initialized: boolean; locked: boolean; reason?: string };
 

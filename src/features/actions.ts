@@ -143,3 +143,28 @@ export async function unsubscribe(id: string) {
 }
 
 export function openSettings(section = "general") { setUi({ settings: section }); }
+
+/** Snooze: hidden until `until`, then back unread with a notification. Kept on this computer only. */
+export async function snooze(until: number, ids?: string[]) {
+  const t = targets(ids).map((m) => m.id);
+  if (!t.length) return;
+  removeRowsLocally(t);
+  try {
+    await api.snooze(t, until);
+    notify.ok(`Snoozed until ${new Date(until).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`, {
+      action: { label: "Undo", onClick: () => { api.unsnooze(t).then(() => reloadList({ keepSelection: true })).catch((e) => notify.error(e, "Couldn't un-snooze")); } },
+    });
+  } catch (e) {
+    notify.error(e, "Couldn't snooze");
+    void reloadList({ keepSelection: true });
+  } finally {
+    void refreshFolders();
+  }
+}
+
+export async function unsnooze(ids?: string[]) {
+  const t = targets(ids).map((m) => m.id);
+  if (!t.length) return;
+  removeRowsLocally(t);
+  await guarded("Couldn't un-snooze", () => api.unsnooze(t));
+}

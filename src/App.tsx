@@ -5,7 +5,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { AlertTriangle, RefreshCw } from "lucide-react";
-import { boot, getState, isOverviewWindow, openComposer, useStore } from "./lib/store";
+import { boot, getState, isOverviewWindow, openComposer, setUi, useStore } from "./lib/store";
 import { Overview } from "./features/overview/Overview";
 import { usePim } from "./lib/pim";
 import { PimLayer } from "./features/pim/ModeSwitch";
@@ -14,6 +14,9 @@ import { ContactsView } from "./features/contacts/ContactsView";
 import { VaultGate } from "./features/onboarding/VaultGate";
 import { dailyUpdateCheck } from "./lib/updates";
 import { modalOpen } from "./lib/dom";
+import { SnoozeHost } from "./features/snooze/SnoozeHost";
+import { startFilterFromMessage } from "./features/settings/FiltersPage";
+import type { MessageSummary } from "./lib/types";
 import { events } from "./lib/api";
 import { Toaster, notify } from "./lib/notify";
 import { displayName, parseAddresses } from "./lib/utils";
@@ -58,6 +61,11 @@ export function App() {
 
   React.useEffect(() => { void boot(); }, []);
   React.useEffect(() => installShortcuts(), []);
+  React.useEffect(() => {
+    const h = (e: Event) => { startFilterFromMessage((e as CustomEvent<MessageSummary>).detail); setUi({ settings: "filters" }); };
+    window.addEventListener("wm:filter-from", h);
+    return () => window.removeEventListener("wm:filter-from", h);
+  }, []);
   React.useEffect(() => { if (!isOverviewWindow()) void dailyUpdateCheck(); }, []);
   useDesktopIntegration();
 
@@ -86,6 +94,7 @@ export function App() {
       <SettingsDialog />
       <IwConnectDialog />
       <OutboxDialog />
+      <SnoozeHost />
       {ready && !bootError && !vaultLocked && !isOverviewWindow() && <PimLayer />}
       <Toaster theme={theme} />
     </TooltipPrimitive.Provider>
