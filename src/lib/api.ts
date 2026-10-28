@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Account, AccountTest, Address, ApiError, Autodetected, DraftInput, Folder, Identity, ImportCandidate,
   IwBusinessMailbox, IwPerson, IwStatus, MailChangedEvent, MailNewEvent, MessageFull, MessagePage, MessageSummary,
-  OutboxItem, Provider, SearchHit, ServerConfig, Settings, SyncStatusEvent, Tag, UndoableEvent, ViewQuery, FlagName,
+  OutboxItem, Provider, SearchHit, SecretsStatus, ServerConfig, Settings, SyncStatusEvent, Tag, UndoableEvent, ViewQuery, FlagName,
 } from "./types";
 
 /** Every engine failure arrives as an ApiError (docs/API.md "Errors"). Anything else — a panic string, a Tauri
@@ -25,6 +25,9 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
 
 export const api = {
   overviewWindowOpen: () => call<null>("overview_window_open"),
+  secretsStatus: () => call<SecretsStatus>("secrets_status"),
+  secretsCreate: (password: string) => call<SecretsStatus>("secrets_create", { password }),
+  secretsUnlock: (password: string) => call<SecretsStatus>("secrets_unlock", { password }),
   accountsList: () => call<Account[]>("accounts_list"),
   accountAutodetect: (email: string) => call<Autodetected>("account_autodetect", { email }),
   accountTest: (imap: ServerConfig, smtp: ServerConfig, password?: string) => call<AccountTest>("account_test", { imap, smtp, password }),

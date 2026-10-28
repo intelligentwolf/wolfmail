@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { api, events } from "./api";
 import { notify } from "./notify";
 import type {
+  SecretsStatus,
   Account, AccountStatus, DraftInput, Folder, IwStatus, MessageSummary, OutboxItem, Settings, Tag, UnifiedView, ViewFilter,
 } from "./types";
 
@@ -24,6 +25,7 @@ export type State = {
   settings: Settings | null;
   tags: Tag[];
   iw: IwStatus | null;
+  secrets: SecretsStatus | null;
   outbox: OutboxItem[];
   sync: Record<string, { status: AccountStatus; message?: string; progress?: { done: number; total: number } }>;
 
@@ -61,6 +63,7 @@ let state: State = {
   settings: null,
   tags: [],
   iw: null,
+  secrets: null,
   outbox: [],
   sync: {},
   view: { kind: "unified", unified: "inbox" },
@@ -112,11 +115,11 @@ export async function boot() {
   if (booted) return;
   booted = true;
   try {
-    const [accounts, folders, settings, tags, outbox] = await Promise.all([
-      api.accountsList(), api.foldersList(), api.settingsGet(), api.tagsList(), api.outboxList(),
+    const [accounts, folders, settings, tags, outbox, secrets] = await Promise.all([
+      api.accountsList(), api.foldersList(), api.settingsGet(), api.tagsList(), api.outboxList(), api.secretsStatus(),
     ]);
     // outbox_list also returns recently sent items (engine keeps them briefly); the store tracks only pending ones.
-    setState({ accounts, folders, settings, tags, outbox: outbox.filter((o) => o.state !== "sent"), ready: true, ...(isOverviewWindow() ? { view: { kind: "overview" as const } } : {}) });
+    setState({ accounts, folders, settings, tags, secrets, outbox: outbox.filter((o) => o.state !== "sent"), ready: true, ...(isOverviewWindow() ? { view: { kind: "overview" as const } } : {}) });
     api.iwStatus().then((iw) => setState({ iw })).catch(() => setState({ iw: null }));
     await reloadList();
   } catch (e) {

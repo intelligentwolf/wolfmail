@@ -16,7 +16,7 @@ use wolfmail_core::engine::{DraftSaved, Engine, EngineConfig, EventSink};
 use wolfmail_core::error::{ApiError, ErrorKind};
 use wolfmail_core::model::*;
 use wolfmail_core::oauth::OAuthProvider;
-use wolfmail_core::secrets::KeyringStore;
+use wolfmail_core::secrets::{AutoStore, SecretsStatus};
 
 type R<T> = Result<T, ApiError>;
 
@@ -24,6 +24,8 @@ struct AppState {
     rt: tokio::runtime::Runtime,
     engine: Result<Engine, ApiError>,
     close_to_tray: Arc<AtomicBool>,
+    /// Keychain or encrypted vault (secrets.rs AutoStore); kept here so the UI can create/unlock the vault.
+    secrets: Arc<AutoStore>,
 }
 
 impl AppState {
@@ -72,6 +74,41 @@ fn show_overview(app: &AppHandle) -> tauri::Result<()> {
         .min_inner_size(700.0, 480.0)
         .build()?;
     Ok(())
+}
+
+#[tauri::command]
+fn secrets_status(s: State<'_, AppState>) -> R<SecretsStatus> {
+    Ok(s.secrets.status())
+}
+
+/// Argon2id deliberately takes about a second, so it runs on the blocking pool, never on the async runtime.
+async fn vault_op(s: &AppState, create: bool, password: String) -> R<SecretsStatus> {
+    let store = Arc::clone(&s.secrets);
+    let st = s
+        .rt
+        .spawn_blocking(move || {
+            if create { store.create_vault(&password) } else { store.unlock_vault(&password) }?;
+            Ok::<_, ApiError>(store.status())
+        })
+        .await
+        .map_err(|e| ApiError::internal(format!("The vault task stopped: {e}")))??;
+    // Accounts that failed to sync while the vault was locked can now read their passwords.
+    if let Ok(e) = s.engine.clone() {
+        s.rt.spawn(async move {
+            let _ = e.sync_now(None).await;
+        });
+    }
+    Ok(st)
+}
+
+#[tauri::command]
+async fn secrets_create(s: State<'_, AppState>, password: String) -> R<SecretsStatus> {
+    vault_op(&s, true, password).await
+}
+
+#[tauri::command]
+async fn secrets_unlock(s: State<'_, AppState>, password: String) -> R<SecretsStatus> {
+    vault_op(&s, false, password).await
 }
 
 #[tauri::command]
@@ -397,6 +434,8 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::new().with_state_flags(StateFlags::all() & !StateFlags::VISIBLE).build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -418,7 +457,8 @@ pub fn run() {
                 r.map_err(|e| ApiError::new(ErrorKind::Internal, format!("Could not open {target}: {e}")))
             });
             let sink = Arc::new(TauriSink { app: handle.clone(), tray: Arc::clone(&tray_slot) });
-            let engine = rt.block_on(Engine::start(cfg, Arc::new(KeyringStore), sink, opener));
+            let secrets = Arc::new(AutoStore::detect(&cfg.data_dir));
+            let engine = rt.block_on(Engine::start(cfg, Arc::clone(&secrets) as Arc<dyn wolfmail_core::secrets::SecretStore>, sink, opener));
             let settings = match &engine {
                 Ok(e) => rt.block_on(e.settings_get()).unwrap_or_default(),
                 Err(err) => {
@@ -427,7 +467,7 @@ pub fn run() {
                 }
             };
             let close_to_tray = Arc::new(AtomicBool::new(settings.close_to_tray));
-            app.manage(AppState { rt, engine, close_to_tray: Arc::clone(&close_to_tray) });
+            app.manage(AppState { rt, engine, close_to_tray: Arc::clone(&close_to_tray), secrets });
 
             match build_tray(&handle) {
                 Ok(t) => *tray_slot.lock() = Some(t),
@@ -456,6 +496,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             overview_window_open,
+            secrets_status,
+            secrets_create,
+            secrets_unlock,
             accounts_list,
             account_autodetect,
             account_test,

@@ -107,6 +107,8 @@ export type IwPerson = {
 };
 export type IwBusinessMailbox = { email: string; imapHost: string; imapPort: number; smtpHost: string; smtpPort: number };
 
+export type SecretsStatus = { backend: "keychain" | "file"; initialized: boolean; locked: boolean; reason?: string };
+
 // Events
 export type SyncStatusEvent = { accountId: string; status: AccountStatus; message?: string; progress?: { done: number; total: number } };
 export type MailChangedEvent = { folderIds: string[] };

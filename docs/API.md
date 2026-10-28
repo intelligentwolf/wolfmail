@@ -182,6 +182,19 @@ type ImportCandidate = {
 | `iw_booking_link` | – | `{ url, title }[]` |
 | `iw_business_mailboxes` | – | `{ email, imapHost, imapPort, smtpHost, smtpPort }[]` (no passwords) |
 
+## Secrets (keychain or encrypted vault)
+
+On start the app probes the OS credential store (Keychain / Credential Manager / Secret Service). If it is unusable —
+typically Linux without a Secret Service daemon — or a vault already exists, secrets go to `secrets.vault` in the data
+dir: Argon2id-derived key, XChaCha20-Poly1305, primary password (see `crates/wolfmail-core/src/secrets.rs`).
+
+| Command | Args | Returns |
+|---|---|---|
+| `secrets_status` | – | `{ backend: "keychain"\|"file", initialized, locked, reason? }` |
+| `secrets_create` | `{ password }` | same — first run of the file backend; ≥ 8 chars; refuses if a vault exists |
+| `secrets_unlock` | `{ password }` | same — wrong password → `ApiError { kind: "auth", field: "password" }`; on success triggers a sync |
+| `overview_window_open` | – | `null` — opens/focuses the "All inboxes" window |
+
 ## Events (engine → UI)
 
 | Event | Payload |

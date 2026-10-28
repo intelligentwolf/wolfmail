@@ -7,6 +7,8 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { boot, getState, isOverviewWindow, openComposer, useStore } from "./lib/store";
 import { Overview } from "./features/overview/Overview";
+import { VaultGate } from "./features/onboarding/VaultGate";
+import { dailyUpdateCheck } from "./lib/updates";
 import { events } from "./lib/api";
 import { Toaster, notify } from "./lib/notify";
 import { displayName, parseAddresses } from "./lib/utils";
@@ -45,10 +47,12 @@ export function App() {
   const ready = useStore((s) => s.ready);
   const bootError = useStore((s) => s.bootError);
   const hasAccounts = useStore((s) => s.accounts.length > 0);
+  const vaultLocked = useStore((s) => s.secrets?.backend === "file" && s.secrets.locked);
   const theme = useTheme();
 
   React.useEffect(() => { void boot(); }, []);
   React.useEffect(() => installShortcuts(), []);
+  React.useEffect(() => { if (!isOverviewWindow()) void dailyUpdateCheck(); }, []);
   useDesktopIntegration();
 
   return (
@@ -60,6 +64,8 @@ export function App() {
           <EmptyState tone="error" icon={<AlertTriangle className="size-6" />} title="WolfMail couldn't start its mail engine" body={bootError}
             action={<Button onClick={() => window.location.reload()}><RefreshCw /> Try again</Button>} />
         </div>
+      ) : vaultLocked ? (
+        <VaultGate />
       ) : isOverviewWindow() ? (
         <div className="h-full"><Overview dark={theme === "dark"} /></div>
       ) : hasAccounts ? (

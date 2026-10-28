@@ -6,7 +6,8 @@
 #   actions/setup-node     v7.1.0        949feb2413d6458794dcd2491c4babbbce0c15c1
 #   Swatinem/rust-cache    v2.9.3        d1527c8f67ef9af357290475d4af4b0fab8f12e0 (tag object 2201cc58… → commit)
 #   tauri-apps/tauri-action action-v1.0.0 1deb371b0cd8bd54025b384f1cd735e725c4060f
-# Linux packages: Tauri v2 prerequisites (tauri-docs src/content/docs/start/prerequisites.mdx, "apt install").
+# Ordinary CI builds merge src-tauri/tauri.ci.conf.json (no updater artifacts: those need the signing key, which
+# only the release workflow gets). Linux packages: Tauri v2 prerequisites (tauri-docs src/content/docs/start/prerequisites.mdx, "apt install").
 # The Rust toolchain comes from rust-toolchain.toml (rustup installs it on first cargo call).
 name: build
 
@@ -52,17 +53,17 @@ jobs:
         include:
           # Ubuntu 22.04 = glibc 2.35, so the .deb/.rpm/AppImage also run on older distros than the newest runner.
           - os: ubuntu-22.04
-            args: "--bundles deb,rpm,appimage"
+            args: "--bundles deb,rpm,appimage --config src-tauri/tauri.ci.conf.json"
             name: linux-x86_64
           - os: windows-latest
-            args: "--bundles msi,nsis"
+            args: "--bundles msi,nsis --config src-tauri/tauri.ci.conf.json"
             name: windows-x86_64
           - os: macos-latest
-            args: "--target aarch64-apple-darwin --bundles dmg,app"
+            args: "--target aarch64-apple-darwin --bundles dmg,app --config src-tauri/tauri.ci.conf.json"
             target: aarch64-apple-darwin
             name: macos-apple-silicon
           - os: macos-latest
-            args: "--target x86_64-apple-darwin --bundles dmg,app"
+            args: "--target x86_64-apple-darwin --bundles dmg,app --config src-tauri/tauri.ci.conf.json"
             target: x86_64-apple-darwin
             name: macos-intel
     runs-on: ${{ matrix.os }}

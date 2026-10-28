@@ -12,6 +12,7 @@ import type { SearchHit } from "../../lib/types";
 import { displayName, listDate } from "../../lib/utils";
 import { Avatar } from "../../components/ui/misc";
 import { newDraftFor } from "../compose/drafts";
+import { IW_ENABLED } from "../../lib/features";
 import * as A from "../actions";
 
 /** Ctrl+K: one box for everything. Typing searches every account's local index (FTS5) as well as commands and
@@ -126,7 +127,7 @@ export function CommandPalette() {
                     <Command.Item value="add account" onSelect={run(() => setUi({ addAccount: true }))} className={item}><UserPlus /> Add an email account</Command.Item>
                     <Command.Item value="import betterbird thunderbird" onSelect={run(() => setUi({ importer: true }))} className={item}><Download /> Import from Betterbird or Thunderbird</Command.Item>
                     <Command.Item value="outbox queued scheduled" onSelect={run(() => setUi({ outbox: true }))} className={item}><Upload /> Outbox and scheduled mail</Command.Item>
-                    {iw?.connected
+                    {!IW_ENABLED ? null : iw?.connected
                       ? <Command.Item value="intelligentwolf panel crm" onSelect={run(() => setUi({ iwPanel: !getState().ui.iwPanel }))} className={item}><Sparkles /> Show / hide the IntelligentWolf panel</Command.Item>
                       : <Command.Item value="connect intelligentwolf crm" onSelect={run(() => setUi({ iwConnect: true }))} className={item}><Link2 /> Connect IntelligentWolf</Command.Item>}
                     <Command.Item value="settings preferences" onSelect={run(() => setUi({ settings: "general" }))} className={item}><Settings /> Settings</Command.Item>
