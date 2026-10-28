@@ -492,6 +492,9 @@ pub struct Settings {
     pub load_remote_content: String,
     pub mark_read_after_ms: i64,
     pub iw_base_url: String,
+    /// The little wolf in the bottom-left corner (Alex from IntelligentWolf), and the name the user calls him.
+    pub show_assistant: bool,
+    pub assistant_name: String,
 }
 
 impl Default for Settings {
@@ -510,6 +513,9 @@ impl Default for Settings {
             mark_read_after_ms: 1500,
             // Source: docs/IW-INTEGRATION.md "Base URL".
             iw_base_url: "https://intelligentwolf.com/api".into(),
+            show_assistant: true,
+            // Paul, 28 Oct 2026: "a little wolf … called Mike (the user can change them)".
+            assistant_name: "Mike".into(),
         }
     }
 }

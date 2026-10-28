@@ -190,6 +190,9 @@ impl Engine {
             return Err(ApiError::invalid("undoSendSeconds", "Undo send can be between 0 and 30 seconds."));
         }
         crate::iw::validate_base(&next.iw_base_url)?;
+        if !crate::iw::valid_assistant_name(&next.assistant_name) {
+            return Err(ApiError::invalid("assistantName", "Use 1–24 letters (spaces, hyphens and apostrophes are fine)."));
+        }
         let s = serde_json::to_string(&next)?;
         self.store()
             .call(move |c| {

@@ -204,3 +204,35 @@
 }
 @keyframes wm-spin { to { transform: rotate(360deg); } }
 .wm-spin { animation: wm-spin 0.9s linear infinite; }
+
+/* The assistant wolf (features/assistant). Source: IntelligentWolf src/styles/index.css iw-wolf-* — the same wolf as
+   Alex on the IntelligentWolf floor, so he moves the same way here. */
+@keyframes wm-wolf-bob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4%); }
+}
+@keyframes wm-wolf-listen {
+  0%, 100% { opacity: 0.35; transform: scale(0.94); }
+  50%      { opacity: 0.7;  transform: scale(1); }
+}
+@keyframes wm-wolf-hop {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  18%      { transform: translateY(0) scale(1.1, 0.88); }
+  42%      { transform: translateY(-34%) scale(0.94, 1.06); }
+  64%      { transform: translateY(0) scale(1.08, 0.9); }
+  80%      { transform: translateY(-10%) scale(1, 1); }
+}
+@keyframes wm-wolf-sit {
+  0%, 100% { transform: scale(1.04, 0.9); }
+  50%      { transform: scale(1.06, 0.88); }
+}
+.wm-wolf-idle   { animation: wm-wolf-bob 2.6s ease-in-out infinite; }
+.wm-wolf-listen { animation: wm-wolf-listen 1.6s ease-in-out infinite; }
+.wm-wolf-hop    { animation: wm-wolf-hop 1.1s ease-in-out infinite; }
+.wm-wolf-sit    { animation: wm-wolf-sit 3.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .wm-wolf-idle { animation-duration: 5.2s; }
+  .wm-wolf-hop { animation: none; }
+  .wm-wolf-sit { animation: none; transform: scale(1.04, 0.9); }
+  .wm-wolf-listen { animation: none; opacity: 0.5; }
+}

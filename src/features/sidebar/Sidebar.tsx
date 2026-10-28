@@ -40,6 +40,7 @@ export function Sidebar() {
   const view = useStore((s) => s.view);
   const sync = useStore((s) => s.sync);
   const outbox = useStore((s) => s.outbox);
+  const showAssistant = useStore((s) => s.settings?.showAssistant ?? true);
   const [syncing, setSyncing] = React.useState(false);
 
   const unifiedUnread = React.useMemo(() => {
@@ -121,7 +122,8 @@ export function Sidebar() {
         </div>
       </div>
 
-      <div className="flex items-center gap-1 border-t border-border px-3 py-2">
+      {/* The assistant wolf (features/assistant) sits over the left of this row: keep it clear of him. */}
+      <div className={cn("flex min-h-[52px] items-center gap-1 border-t border-border px-3 py-2", IW_ENABLED && showAssistant && "pl-[72px]")}>
         {IW_ENABLED && <IwBadge />}
         <div className="flex-1" />
         <IconButton label="Settings" shortcut={`${modKey}+,`} size="iconSm" onClick={() => setUi({ settings: "general" })}>

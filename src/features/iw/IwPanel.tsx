@@ -2,7 +2,7 @@ import * as React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Sparkles, ClipboardCheck, BookmarkPlus, ExternalLink, Building2, Phone, Mail, Calendar, FileText, MessageSquare, Receipt,
-  UserRound, ListChecks, X,
+  UserRound, ListChecks, X, UserPen, UserPlus,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
@@ -59,6 +59,7 @@ function PersonCard({ email, name, row }: { email: string; name?: string; row: M
   const [summary, setSummary] = React.useState<{ text: string; credits: number } | null>(null);
   const [busy, setBusy] = React.useState<null | "sum" | "log">(null);
   const [taskOpen, setTaskOpen] = React.useState(false);
+  const assistant = useStore((s) => s.settings?.assistantName || "Mike");
 
   React.useEffect(() => {
     let live = true;
@@ -69,12 +70,12 @@ function PersonCard({ email, name, row }: { email: string; name?: string; row: M
   const summarise = async () => {
     setBusy("sum");
     try { const r = await api.iwAi("summarise", row.id); setSummary({ text: r.text, credits: r.creditsUsed }); }
-    catch (e) { notify.error(e, "Alex couldn't summarise this"); }
+    catch (e) { notify.error(e, `${assistant} couldn't summarise this`); }
     finally { setBusy(null); }
   };
   const log = async () => {
     setBusy("log");
-    try { await api.iwLogEmail(row.id, person?.leadId); notify.ok(person ? `Logged to ${person.name}'s timeline` : "Logged — a new lead was created in IntelligentWolf"); }
+    try { await api.iwLogEmail(row.id, { leadId: person?.leadId, contactId: person?.contactId }); notify.ok(person ? `Logged to ${person.name}'s timeline` : "Logged — a new lead was created in IntelligentWolf"); }
     catch (e) { notify.error(e, "Couldn't log the email"); }
     finally { setBusy(null); }
   };
@@ -125,10 +126,13 @@ function PersonCard({ email, name, row }: { email: string; name?: string; row: M
 
       <div className="grid grid-cols-1 gap-2">
         <Button variant="secondary" className="justify-start" disabled={busy !== null} onClick={summarise}>
-          {busy === "sum" ? <Spinner /> : <Sparkles className="text-[var(--iw-red-text)]" />} Summarise with Alex
+          {busy === "sum" ? <Spinner /> : <Sparkles className="text-[var(--iw-red-text)]" />} Summarise with {assistant}
         </Button>
         <Button variant="secondary" className="justify-start" disabled={busy !== null} onClick={log}>
           {busy === "log" ? <Spinner /> : <BookmarkPlus />} Log to CRM
+        </Button>
+        <Button variant="secondary" className="justify-start" onClick={() => window.dispatchEvent(new CustomEvent("wm:iw-update", { detail: row.id }))}>
+          {person ? <><UserPen /> Update {person.name} from this email…</> : <><UserPlus /> Add to IntelligentWolf…</>}
         </Button>
         <Button variant="secondary" className="justify-start" onClick={() => setTaskOpen(true)}><ClipboardCheck /> Make a task</Button>
       </div>
@@ -136,7 +140,7 @@ function PersonCard({ email, name, row }: { email: string; name?: string; row: M
 
       {summary && (
         <section aria-label="Summary" className="rounded-card bg-[var(--iw-red-wash)] p-3.5 ring-1 ring-[var(--iw-red)]/20">
-          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold"><Sparkles className="size-3.5 text-[var(--iw-red-text)]" /> Alex's summary <span className="ml-auto font-normal text-muted-foreground">{summary.credits} credits</span></div>
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold"><Sparkles className="size-3.5 text-[var(--iw-red-text)]" /> {assistant}'s summary <span className="ml-auto font-normal text-muted-foreground">{summary.credits} credits</span></div>
           <p className="selectable whitespace-pre-wrap text-[13px] leading-relaxed">{summary.text}</p>
         </section>
       )}

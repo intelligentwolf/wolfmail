@@ -218,6 +218,35 @@ impl IwClient<'_> {
         self.call(reqwest::Method::GET, "/wolfmail/business-mailboxes", &[], None).await
     }
 
+    /// Which of these addresses are people in IW → `{ matches: { email: { kind, id, name, url } } }`.
+    pub async fn people(&self, emails: &[String]) -> Result<Value> {
+        self.call(reqwest::Method::POST, "/wolfmail/people", &[], Some(json!({ "emails": emails }))).await
+    }
+
+    pub async fn contact_update(&self, body: Value) -> Result<Value> {
+        self.call(reqwest::Method::PATCH, "/wolfmail/contact", &[], Some(body)).await
+    }
+
+    pub async fn contact_create(&self, body: Value) -> Result<Value> {
+        self.call(reqwest::Method::POST, "/wolfmail/contacts", &[], Some(body)).await
+    }
+
+    pub async fn chat_send(&self, body: Value) -> Result<Value> {
+        self.call(reqwest::Method::POST, "/wolfmail/chat", &[], Some(body)).await
+    }
+
+    pub async fn chat_turn(&self, turn: &str) -> Result<Value> {
+        // Source: php-api/lib/wolfmail.php wolfmail_turn_load() — 'wmt-' + 20 hex.
+        if turn.len() != 24 || !turn.starts_with("wmt-") || !turn[4..].chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(ApiError::invalid("turn", "Not a chat message id."));
+        }
+        self.call(reqwest::Method::GET, &format!("/wolfmail/chat/{turn}"), &[], None).await
+    }
+
+    pub async fn chat_history(&self) -> Result<Value> {
+        self.call(reqwest::Method::GET, "/wolfmail/chat", &[], None).await
+    }
+
     pub async fn disconnect(&self) -> Result<()> {
         if self.device()?.is_some() {
             // Tell the server first; whatever it says, the local token goes.
@@ -225,6 +254,16 @@ impl IwClient<'_> {
         }
         self.secrets.delete(IW_DEVICE_KEY)
     }
+}
+
+/// The assistant's name: 1–24 letters, spaces, hyphens or apostrophes, starting with a letter.
+/// Source: IntelligentWolf php-api/lib/wolfmail.php wolfmail_assistant_name() — anything else is "Mike" there.
+pub fn valid_assistant_name(name: &str) -> bool {
+    let n = name.trim();
+    let count = n.chars().count();
+    (1..=24).contains(&count)
+        && n.chars().next().is_some_and(char::is_alphabetic)
+        && n.chars().all(|c| c.is_alphabetic() || c == ' ' || c == '\'' || c == '-')
 }
 
 /// Truncate to N characters (the AI route takes at most 20 000 — docs/IW-INTEGRATION.md).
@@ -300,6 +339,68 @@ mod tests {
         let e = c.booking_links().await.err().unwrap();
         assert_eq!(e.kind, ErrorKind::Auth);
         assert!(!c.status("x").unwrap().connected);
+    }
+
+    #[tokio::test]
+    async fn people_contacts_and_chat_routes_against_mock() {
+        crate::tls::install_crypto_provider();
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/wolfmail/people"))
+            .and(header("authorization", "Bearer wmd_abc"))
+            .and(body_json(json!({ "emails": ["ann@example.com"] })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "matches": { "ann@example.com": { "kind": "lead", "id": "12", "name": "Ann", "url": "https://x" } } })))
+            .mount(&server)
+            .await;
+        Mock::given(method("PATCH"))
+            .and(path("/wolfmail/contact"))
+            .and(body_json(json!({ "kind": "lead", "id": "12", "fields": { "phone": "0161" }, "note": "Wants a quote" })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "kind": "lead", "name": "Ann", "leadId": "12", "url": "https://x", "timeline": [] })))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/wolfmail/chat"))
+            .respond_with(ResponseTemplate::new(202).set_body_json(json!({ "turn": "wmt-0123456789abcdef0123", "status": "busy" })))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/wolfmail/chat/wmt-0123456789abcdef0123"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({ "turn": "wmt-0123456789abcdef0123", "status": "done", "reply": "Hello" })))
+            .mount(&server)
+            .await;
+
+        let http = reqwest::Client::new();
+        let secrets = MemoryStore::default();
+        let dev = IwDevice {
+            device_token: "wmd_abc".into(),
+            user: IwUser { name: "Paul".into(), email: "p@x".into() },
+            org: IwOrg { id: json!("org-a"), name: "Wolf".into() },
+            base_url: server.uri(),
+        };
+        secrets.set(IW_DEVICE_KEY, &serde_json::to_string(&dev).unwrap()).unwrap();
+        let c = IwClient { http: &http, secrets: &secrets };
+        let m = c.people(&["ann@example.com".into()]).await.unwrap();
+        assert_eq!(m["matches"]["ann@example.com"]["kind"], "lead");
+        let p = c.contact_update(json!({ "kind": "lead", "id": "12", "fields": { "phone": "0161" }, "note": "Wants a quote" })).await.unwrap();
+        assert_eq!(p["leadId"], "12");
+        let t = c.chat_send(json!({ "message": "hi" })).await.unwrap();
+        let turn = t["turn"].as_str().unwrap();
+        assert_eq!(c.chat_turn(turn).await.unwrap()["reply"], "Hello");
+        // A turn id is only ever wmt-<hex>: nothing else reaches the URL path.
+        assert!(c.chat_turn("../device").await.is_err());
+        assert!(c.chat_turn("wmt-zz").await.is_err());
+    }
+
+    #[test]
+    fn assistant_names() {
+        assert!(valid_assistant_name("Mike"));
+        assert!(valid_assistant_name("D'Arcy-Jo"));
+        assert!(valid_assistant_name("Zoë"));
+        assert!(!valid_assistant_name(""));
+        assert!(!valid_assistant_name("  "));
+        assert!(!valid_assistant_name("-Mike"));
+        assert!(!valid_assistant_name("Mike<b>"));
+        assert!(!valid_assistant_name(&"a".repeat(25)));
     }
 
     #[test]

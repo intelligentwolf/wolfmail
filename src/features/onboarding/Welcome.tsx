@@ -28,7 +28,7 @@ export function Welcome() {
           <img src="/icon.png" alt="" className="mb-5 size-16 rounded-2xl shadow-[var(--shadow-card)]" />
           <h1 className="font-title text-[40px] leading-none tracking-tight">Welcome to WolfMail</h1>
           <p className="mt-3 max-w-xl text-[15px] text-muted-foreground">
-            {IW_ENABLED ? "Every inbox in one fast, private window — with your IntelligentWolf CRM and Alex right beside your mail." : "Every inbox in one fast, private window."}
+            {IW_ENABLED ? "Every inbox in one fast, private window — with your IntelligentWolf contacts and assistant right beside your mail." : "Every inbox in one fast, private window."}
           </p>
         </div>
 
@@ -42,7 +42,7 @@ export function Welcome() {
             onClick={() => setUi({ importer: true })}
           />
           <Card icon={<UserPlus className="size-5" />} title="Add an account" body="Gmail, Microsoft 365, or any IMAP mailbox — we find the server settings for you." cta="Add account" onClick={() => setUi({ addAccount: true })} />
-          {IW_ENABLED && <Card icon={<Link2 className="size-5" />} title="Connect IntelligentWolf" body="See who's writing in your CRM, summarise threads with Alex, and turn emails into tasks." cta="Connect" onClick={() => setUi({ iwConnect: true })} />}
+          {IW_ENABLED && <Card icon={<Link2 className="size-5" />} title="Connect IntelligentWolf" body="See who's writing in your CRM, update contacts from email, and get help from your assistant." cta="Connect" onClick={() => setUi({ iwConnect: true })} />}
         </div>
 
         <ul className="mt-10 grid gap-3 text-[13px] text-muted-foreground sm:grid-cols-3">

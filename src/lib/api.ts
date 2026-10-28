@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   Account, AccountTest, Address, ApiError, Autodetected, DraftInput, Folder, Identity, ImportCandidate,
-  IwBusinessMailbox, IwPerson, IwStatus, MailChangedEvent, MailNewEvent, MessageFull, MessagePage, MessageSummary,
+  IwBusinessMailbox, IwChatMessage, IwChatTurn, IwExtract, IwField, IwMatch, IwPerson, IwStatus, MailChangedEvent, MailNewEvent, MessageFull, MessagePage, MessageSummary,
   OutboxItem, Provider, SearchHit, SecretsStatus, FilterRule, ServerConfig, Settings, SyncStatusEvent, Tag, UndoableEvent, ViewQuery, FlagName,
 } from "./types";
 
@@ -97,7 +97,16 @@ export const api = {
   iwPerson: (email: string) => call<IwPerson | null>("iw_person", { email }),
   iwAi: (action: "summarise" | "draftReply" | "triage", messageId: string, instructions?: string) =>
     call<{ text: string; creditsUsed: number }>("iw_ai", { action, messageId, instructions }),
-  iwLogEmail: (messageId: string, leadId?: string) => call<null>("iw_log_email", { messageId, leadId }),
+  iwLogEmail: (messageId: string, opts: { leadId?: string; contactId?: string; includeText?: boolean } = {}) =>
+    call<{ leadId: string | null; contactId: string | null }>("iw_log_email", { messageId, leadId: opts.leadId, contactId: opts.contactId, includeText: opts.includeText }),
+  iwExtractContact: (messageId: string) => call<IwExtract>("iw_ai", { action: "extractContact", messageId }),
+  iwPeople: (emails: string[]) => call<Record<string, IwMatch>>("iw_people", { emails }),
+  iwContactUpdate: (kind: "lead" | "contact", id: string, fields: Partial<Record<IwField, string>>, note?: string) =>
+    call<IwPerson>("iw_contact_update", { kind, id, fields, note }),
+  iwContactCreate: (email: string, fields: Partial<Record<IwField, string>>) => call<IwPerson>("iw_contact_create", { email, fields }),
+  iwChatSend: (message: string, messageId?: string, newThread?: boolean) => call<IwChatTurn>("iw_chat_send", { message, messageId, newThread }),
+  iwChatPoll: (turn: string) => call<IwChatTurn>("iw_chat_poll", { turn }),
+  iwChatHistory: () => call<{ messages: IwChatMessage[] }>("iw_chat_history"),
   iwCreateTask: (messageId: string, title: string, due?: number) => call<{ taskId: string }>("iw_create_task", { messageId, title, due }),
   iwBookingLinks: () => call<{ url: string; title: string }[]>("iw_booking_link"),
   iwBusinessMailboxes: () => call<IwBusinessMailbox[]>("iw_business_mailboxes"),

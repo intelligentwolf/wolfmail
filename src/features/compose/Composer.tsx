@@ -56,6 +56,7 @@ function ComposerWindow({ c }: { c: Composer }) {
   const settings = useStore((s) => s.settings);
   const accounts = useStore((s) => s.accounts);
   const iwConnected = useStore((s) => !!s.iw?.connected);
+  const assistant = settings?.assistantName || "Mike";
   const [draft, setDraft] = React.useState<DraftInput>(c.draft);
   const [showCc, setShowCc] = React.useState(c.draft.cc.length > 0);
   const [showBcc, setShowBcc] = React.useState(c.draft.bcc.length > 0);
@@ -248,14 +249,14 @@ function ComposerWindow({ c }: { c: Composer }) {
   const draftWithAi = async () => {
     if (!c.sourceId) return;
     try {
-      notify.info("Alex is drafting a reply…", { id: "ai-draft" });
+      notify.info(`${assistant} is drafting a reply…`, { id: "ai-draft" });
       const r = await api.iwAi("draftReply", c.sourceId, editor?.getText() || undefined);
       notify.dismiss("ai-draft");
       editor?.chain().focus().setContent(r.text.split(/\n{2,}/).map((p) => `<p>${escapeHtml(p).replace(/\n/g, "<br>")}</p>`).join("")).run();
       dirty.current = true;
       scheduleSave();
       notify.ok(`Draft written · ${r.creditsUsed} credits`);
-    } catch (e) { notify.dismiss("ai-draft"); notify.error(e, "Alex couldn't draft a reply"); }
+    } catch (e) { notify.dismiss("ai-draft"); notify.error(e, `${assistant} couldn't draft a reply`); }
   };
 
   const expanded = !!c.expanded;
@@ -388,7 +389,7 @@ function ComposerWindow({ c }: { c: Composer }) {
         <span className="ml-1 hidden text-[11px] text-muted-foreground sm:inline">{modKey}+Enter</span>
         <div className="flex-1" />
         {iwConnected && c.sourceId && (
-          <IconButton label="Draft a reply with Alex (uses IntelligentWolf credits)" side="top" onClick={draftWithAi}><Sparkles /></IconButton>
+          <IconButton label={`Draft a reply with ${assistant} (uses IntelligentWolf credits)`} side="top" onClick={draftWithAi}><Sparkles /></IconButton>
         )}
         {iwConnected && <IconButton label="Insert my booking link" side="top" onClick={insertBooking}><CalendarPlus /></IconButton>}
         <IconButton label="Attach files" side="top" onClick={addFiles}><Paperclip /></IconButton>

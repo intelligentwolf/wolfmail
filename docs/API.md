@@ -113,6 +113,8 @@ type Settings = {
   loadRemoteContent: "never" | "contacts" | "always";
   markReadAfterMs: number;    // -1 = never automatically
   iwBaseUrl: string;          // default "https://intelligentwolf.com/api"; must be https (http only to 127.0.0.1)
+  showAssistant: boolean;     // default true: the assistant wolf in the bottom-left corner (mail view)
+  assistantName: string;      // default "Mike"; 1–24 letters, spaces, hyphens, apostrophes (iw::valid_assistant_name)
 };
 
 type ImportCandidate = {
@@ -179,8 +181,14 @@ type ImportCandidate = {
 | `iw_pair_poll` | – | `{ state: "pending"\|"done"\|"expired" }` |
 | `iw_disconnect` | – | `null` |
 | `iw_person` | `{ email }` | `IwPerson \| null` (see `docs/IW-INTEGRATION.md`) |
-| `iw_ai` | `{ action: "summarise"\|"draftReply"\|"triage", messageId, instructions? }` | `{ text, creditsUsed }` |
-| `iw_log_email` | `{ messageId, leadId? }` | `null` |
+| `iw_ai` | `{ action: "summarise"\|"draftReply"\|"triage"\|"extractContact", messageId, instructions? }` | `{ text, creditsUsed }`; extractContact adds `{ fields, note }` (the sender's details found in the email) |
+| `iw_log_email` | `{ messageId, leadId?, contactId?, includeText? }` | `{ leadId, contactId }` — `includeText` sends the whole text, not just the snippet |
+| `iw_people` | `{ emails: string[] }` | `{ [email]: { kind, id, name, url } }` — only addresses are sent; batched by 200 |
+| `iw_contact_update` | `{ kind: "lead"\|"contact", id, fields, note? }` | `IwPerson` |
+| `iw_contact_create` | `{ email, fields }` | `IwPerson` (a new lead) |
+| `iw_chat_send` | `{ message, messageId?, newThread? }` | `{ turn, status: "busy" }` — with `messageId` the open email goes too; the assistant's name comes from settings |
+| `iw_chat_poll` | `{ turn }` | `{ turn, status: "busy"\|"done"\|"failed", reply?, error? }` |
+| `iw_chat_history` | – | `{ messages: { role, text, at }[] }` |
 | `iw_create_task` | `{ messageId, title, due? }` | `{ taskId }` |
 | `iw_booking_link` | – | `{ url, title }[]` |
 | `iw_business_mailboxes` | – | `{ email, imapHost, imapPort, smtpHost, smtpPort }[]` (no passwords) |

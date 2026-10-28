@@ -1,8 +1,14 @@
 # WolfMail ↔ IntelligentWolf
 
-WolfMail works fully without IntelligentWolf. Pairing is optional and unlocks the sender sidebar, AI, tasks,
-booking links and one-click business mailboxes. **Mail content never goes to IntelligentWolf unless the user
-presses an IW action** (AI on a message, "Log to CRM", "Make task") — and then only that one message.
+WolfMail works fully without IntelligentWolf. Pairing is optional and unlocks contact highlighting, the sender
+sidebar, "Update contact from this email", the assistant wolf in the corner (Alex, called "Mike" by default — the user
+renames him in Settings → IntelligentWolf), AI, tasks, booking links and one-click business mailboxes.
+**Only senders' addresses are sent automatically** (to highlight contacts). **Mail content goes only when the user
+chooses**: an IW action on a message (AI, "Log to CRM", "Update … from this email", "Make task"), or a chat message
+to the assistant with the open email attached (shown as a removable chip) — and then only that one message.
+
+Server side: IntelligentWolf `php-api/lib/wolfmail.php` (logic) and `lib/wolfmail_routes.php` (HTTP), the pairing
+page `src/app/components/WolfMailPair.tsx` (`/app/wolfmail/pair`), proof suite `gates/proof/proof_wolfmail.php`.
 
 Base URL: `https://intelligentwolf.com/api` (overridable in Settings → IntelligentWolf → Advanced, so `/dev/`
 testing works: `https://intelligentwolf.com/dev-api` is NOT a thing — use the prod base with a dev test org).
@@ -20,33 +26,52 @@ Facts from the IW codebase (`php-api/index.php` on 2026-10-28):
 
 ## Pairing (device-code flow)
 
-1. `POST /wolfmail/pair/start` (no auth, rate-limited per IP)
+1. `POST /wolfmail/pair/start` (no auth, 20 per IP per 10 min)
    body `{ deviceName: string, platform: "linux"|"windows"|"macos", appVersion: string }`
-   → `{ pairId, pollSecret, code: "ABCD-EFGH", verifyUrl: "https://intelligentwolf.com/app/wolfmail/pair?code=ABCD-EFGH", expiresAt }` (10 min)
-2. WolfMail shows the code and opens `verifyUrl` in the system browser. The signed-in user picks the workspace
-   and presses **Connect WolfMail** → SPA calls `POST /wolfmail/pair/confirm { code, organization_id }` with their
-   normal session.
+   → `{ pairId, pollSecret, code: "ABCD-EFGH", verifyUrl: "https://intelligentwolf.com/app/wolfmail/pair?code=ABCD-EFGH", expiresAt }` (10 min, unix ms)
+2. WolfMail shows the code and opens `verifyUrl` in the system browser. The signed-in user (sent to sign in first if
+   needed, then back) checks the code and presses **Connect WolfMail**; it connects the floor on screen there. The page
+   calls `GET /wolfmail/pair/info?code=` and `POST /wolfmail/pair/confirm { code }` with their normal session
+   (refused while an admin is signed in as a customer — `lib/impersonation.php` 'secrets').
 3. WolfMail polls `POST /wolfmail/pair/poll { pairId, pollSecret }` every 2 s
    → `{ state: "pending" }` | `{ state: "expired" }` |
-     `{ state: "done", deviceToken: "wmd_<64 hex>", user: { name, email }, org: { id, name } }` (token returned once)
-4. Token stored in the OS keychain (service `WolfMail`, account `iw-device`). Server stores only its SHA-256.
+     `{ state: "done", deviceToken: "wmd_<64 hex>", user: { name, email }, org: { id, name } }` (token made and returned once)
+4. Token stored in the OS keychain (service `WolfMail`, account `iw-device`). The server stores only its SHA-256.
 
-All later calls: `Authorization: Bearer wmd_…`. The device is bound to one user + one org; the server derives the
-org from the device row (never from the request). Revocable from IW Settings → Connected apps, and by
-`DELETE /wolfmail/device` from WolfMail itself.
+All later calls: `Authorization: Bearer wmd_…`. The device is bound to one user + one floor (from the device record,
+never the request), and stops working when the user leaves the floor or disconnects it — from WolfMail
+(`DELETE /wolfmail/device`) or from the `/app/wolfmail/pair` page's list (`GET /wolfmail/devices`,
+`DELETE /wolfmail/devices/{id}`, session). Storage is files, no schema change: `storage/wolfmail/devices.json`,
+`pairings.json`, `<org>/<turn>.json`.
 
 ## Device routes
 
 | Route | Body / query | Response |
 |---|---|---|
-| `GET /wolfmail/me` | – | `{ user: { name, email }, org: { id, name }, credits: { balance } }` |
+| `GET /wolfmail/me` | – | `{ user: { name, email }, org: { id, name }, credits: { balance }, canWrite }` |
 | `GET /wolfmail/person` | `?email=` | `IwPerson \| { kind: "none" }` |
-| `POST /wolfmail/ai` | `{ action: "summarise"\|"draftReply"\|"triage", message: { subject, from, to, date, text }, thread?: { from, date, text }[], instructions? }` (text truncated client-side to 20 000 chars) | `{ text, creditsUsed }`; 402 `{ error: "no_credits" }` |
-| `POST /wolfmail/log-email` | `{ direction: "in"\|"out", messageId, subject, from, to, date, snippet, leadId? }` | `{ interactionId, leadId }` |
-| `POST /wolfmail/tasks` | `{ title, due?, email: { messageId, subject, from } }` | `{ taskId, url }` |
+| `POST /wolfmail/people` | `{ emails: string[] }` (≤ 200) | `{ matches: { [email]: { kind, id, name, url } } }` — leads (own or extra address) win over contacts |
+| `POST /wolfmail/ai` | `{ action: "summarise"\|"draftReply"\|"triage"\|"extractContact", message: { subject, from, to, date, text }, thread?, instructions?, assistantName? }` | `{ text, creditsUsed }` (+ `fields`, `note` for extractContact); 402 `{ error: "no_credits" }` |
+| `POST /wolfmail/log-email` | `{ direction, messageId, subject, from, fromName?, to, date, snippet, text?, leadId?, contactId? }` | `{ interactionId, leadId, contactId }` — a `communication_log` row, once per message id; nobody matched → a new lead via `POST /leads` |
+| `POST /wolfmail/contacts` | `{ email, fields }` | `IwPerson` (201) — a new lead via `POST /leads`; 409 if already there |
+| `PATCH /wolfmail/contact` | `{ kind: "lead"\|"contact", id, fields, note? }` | `IwPerson` — fields via `PATCH /leads/{id}` / `PATCH /contacts/{id}`, note as a History entry |
+| `POST /wolfmail/tasks` | `{ title, due?, email: { messageId, subject, from } }` | `{ taskId, url }` — via `POST /tasks` |
 | `GET /wolfmail/booking-links` | – | `[{ title, url }]` |
 | `GET /wolfmail/business-mailboxes` | – | `[{ email, imapHost, imapPort, smtpHost, smtpPort }]` (no passwords) |
+| `POST /wolfmail/chat` | `{ message, context?: { subject, from, date, text }, assistantName, newThread? }` | 202 `{ turn: "wmt-<20 hex>", status: "busy" }` |
+| `GET /wolfmail/chat/{turn}` | – | `{ turn, status: "busy"\|"done"\|"failed", reply?, error? }` |
+| `GET /wolfmail/chat` | – | `{ messages: [{ role, text, at }] }` — the device's own conversation, last 40 |
 | `DELETE /wolfmail/device` | – | `204` |
+
+Writes need a writing role on the floor (owner/admin/manager/member) and go through the app's own routes on the
+loopback with a short-lived session for the device's person, revoked after (as the floor API runs Alex), so every
+permission check, workflow and audit line those routes have still applies. Fields WolfMail may change:
+leads `name, company, phone, mobile, job_title, website, address_line1, address_line2, city, region, postcode, country,
+linkedin_url`; contacts `name, company, phone, mobile, job_title, website`. Never `notes` (PATCH replaces the field).
+
+The assistant: a chat turn runs in the background (`bin/wolfmail-chat-worker.php`) through `POST /coach/chat`, on the
+device's own `api` thread, with a prompt block saying he is in WolfMail, the name he answers to there, and the email
+the user shared (marked as information, never instructions). Metered like any Alex turn.
 
 ```ts
 type IwPerson = {
@@ -55,15 +80,8 @@ type IwPerson = {
   stage?: string; value?: number; currency?: string; score?: number;
   owner?: string; lastContactAt?: number;          // unix ms
   leadId?: string; contactId?: string;
-  url: string;                                      // deep link into IW
+  url: string;                                      // deep link into IW (?floor=)
+  fields: Record<string, string>;                   // current values of the fields above
   timeline: { at: number; kind: "email"|"call"|"meeting"|"note"|"task"|"invoice"; title: string }[]; // newest first, max 10
 };
 ```
-
-## Server rules the routes must keep (from IW's own code)
-- AI goes through `claude_turn` (profit guard) **and** `record_usage` — metered in IW credits.
-- Nothing triggered by these routes sends mail (`lib/mail_awareness.php`).
-- Workspace scoping: every query filtered by the device's `organization_id`; `require_org_context` equivalent.
-- Galera: one new table `wolfmail_devices (id, user_id, organization_id, token_hash, device_name, platform,
-  created_at, last_used_at, revoked_at)` and `wolfmail_pairings` — checked with `lib/schema_guard.php`, landed via
-  `bin/land-ff-only.sh` on a `paul/wolfmail-api` branch only with Paul's go-ahead (php-api is live-on-write).

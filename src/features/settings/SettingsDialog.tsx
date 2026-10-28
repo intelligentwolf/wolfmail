@@ -571,7 +571,7 @@ function IwPage() {
   };
   return (
     <>
-      <PageTitle sub="Your CRM, Alex and booking links inside WolfMail. Mail only goes to IntelligentWolf when you press one of its buttons.">IntelligentWolf</PageTitle>
+      <PageTitle sub="Your contacts, your assistant and booking links inside WolfMail. Only senders' addresses are checked automatically; an email itself goes to IntelligentWolf only when you choose.">IntelligentWolf</PageTitle>
       {iw?.connected ? (
         <Card title="Connected">
           <div className="flex items-center gap-3 py-3">
@@ -592,6 +592,7 @@ function IwPage() {
           </div>
         </Card>
       )}
+      <AssistantCard />
       <details className="rounded-card ring-1 ring-border">
         <summary className="cursor-pointer select-none px-5 py-3 text-[13px] font-semibold">Advanced</summary>
         <form onSubmit={saveBase} className="space-y-3 px-5 pb-5" noValidate>
@@ -608,6 +609,36 @@ function IwPage() {
           catch (e) { notify.error(e, "Couldn't disconnect"); }
         }} />
     </>
+  );
+}
+
+/** The little wolf in the bottom-left corner (features/assistant): show him or not, and what to call him.
+ *  Same rule as the engine and IntelligentWolf (iw::valid_assistant_name / wolfmail_assistant_name). */
+const NAME_RE = /^\p{L}[\p{L} '\-]{0,23}$/u;
+function AssistantCard() {
+  const settings = useStore((s) => s.settings);
+  const [name, setName] = React.useState(settings?.assistantName ?? "Mike");
+  const [err, setErr] = React.useState<string>();
+  React.useEffect(() => { setName(settings?.assistantName ?? "Mike"); }, [settings?.assistantName]);
+  if (!settings) return null;
+  const save = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const n = name.trim().replace(/\s+/g, " ");
+    if (!NAME_RE.test(n)) { setErr("Use 1–24 letters (spaces, hyphens and apostrophes are fine)."); return; }
+    setErr(undefined);
+    if (n !== settings.assistantName) void updateSettings({ assistantName: n }).then(() => notify.ok(`Your assistant is now called ${n}`));
+  };
+  return (
+    <Card title="Your assistant">
+      <SwitchRow k="showAssistant" label={`Show ${settings.assistantName} in the corner`}
+        description="The little wolf at the bottom left. He's your IntelligentWolf assistant (Alex), here in WolfMail." />
+      <form onSubmit={save} className="flex items-end gap-2 py-3" noValidate>
+        <Field id="assistant-name" label="His name" className="flex-1" error={err}>
+          <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={24} />
+        </Field>
+        <Button type="submit" size="sm" variant="outline">Save name</Button>
+      </form>
+    </Card>
   );
 }
 

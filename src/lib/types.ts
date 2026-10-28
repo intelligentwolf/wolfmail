@@ -91,6 +91,9 @@ export type Settings = {
   loadRemoteContent: "never" | "contacts" | "always";
   markReadAfterMs: number;
   iwBaseUrl: string;
+  /** The little wolf in the bottom-left corner (Alex from IntelligentWolf) and the name the user calls him. */
+  showAssistant: boolean;
+  assistantName: string;
 };
 
 export type Autodetected = { provider: Provider; imap: ServerConfig; smtp: ServerConfig; source: "builtin" | "ispdb" | "autoconfig" | "srv" | "guess" };
@@ -109,7 +112,17 @@ export type IwPerson = {
   stage?: string; value?: number; currency?: string; score?: number;
   owner?: string; lastContactAt?: number; leadId?: string; contactId?: string; url: string;
   timeline: { at: number; kind: "email" | "call" | "meeting" | "note" | "task" | "invoice"; title: string }[];
+  /** Current values of the details WolfMail may change (php-api/lib/wolfmail.php WOLFMAIL_LEAD_FIELDS / _CONTACT_FIELDS). */
+  fields?: Partial<Record<IwField, string>>;
 };
+export type IwField =
+  | "name" | "company" | "phone" | "mobile" | "job_title" | "website" | "address_line1" | "address_line2"
+  | "city" | "region" | "postcode" | "country" | "linkedin_url";
+/** One address that is a person in IntelligentWolf (iw_people). */
+export type IwMatch = { kind: "lead" | "contact"; id: string; name: string; url: string };
+export type IwExtract = { text: string; creditsUsed: number; fields: Partial<Record<IwField, string>>; note: string };
+export type IwChatMessage = { role: "user" | "assistant"; text: string; at?: number };
+export type IwChatTurn = { turn: string; status: "busy" | "done" | "failed"; reply?: string; error?: string };
 export type IwBusinessMailbox = { email: string; imapHost: string; imapPort: number; smtpHost: string; smtpPort: number };
 
 // Filters (engine/rules.rs). Field/op/action names are the engine's serde names.

@@ -30,6 +30,9 @@ import { newDraftFor } from "./features/compose/drafts";
 import { CommandPalette } from "./features/palette/CommandPalette";
 import { installShortcuts } from "./features/shortcuts";
 import { IwPanel } from "./features/iw/IwPanel";
+import { UpdateContactHost } from "./features/iw/UpdateContactDialog";
+import { Assistant } from "./features/assistant/Assistant";
+import { IW_ENABLED } from "./lib/features";
 import { Welcome } from "./features/onboarding/Welcome";
 import { AddAccountDialog } from "./features/accounts/AddAccountDialog";
 import { ImportDialog } from "./features/accounts/ImportDialog";
@@ -99,6 +102,8 @@ export function App() {
       <SnoozeHost />
       <OAuthHost />
       {ready && !bootError && !vaultLocked && !isOverviewWindow() && <PimLayer />}
+      {IW_ENABLED && ready && !bootError && !vaultLocked && !isOverviewWindow() && hasAccounts && pimMode === "mail" && <Assistant />}
+      {IW_ENABLED && <UpdateContactHost />}
       <Toaster theme={theme} />
     </TooltipPrimitive.Provider>
   );

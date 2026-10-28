@@ -2,8 +2,12 @@ import * as React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive, Trash2, Star, Paperclip, MailOpen, Mail, Search, X, Inbox, SearchX, AlertTriangle, CornerUpLeft, Forward,
-  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff,
+  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink,
 } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { notify } from "../../lib/notify";
+import type { IwMatch } from "../../lib/types";
+import { lookupPeople, otherParty, useIwMatch, useMyAddresses } from "../iw/people";
 import {
   useStore, getState, selectRow, loadMore, setFilter, setSearch, reloadList, selectAll, folderById, accountById,
 } from "../../lib/store";
@@ -35,6 +39,14 @@ export function MessageList() {
   const layout = settings?.listLayout ?? "multiline";
   const compact = settings?.density === "compact";
   const rowH = layout === "table" ? (compact ? 30 : 36) : compact ? 70 : 84;
+
+  // Highlight people who are in IntelligentWolf: ask about the rows' addresses (only addresses go, batched and cached).
+  const iwConnected = useStore((s) => !!s.iw?.connected);
+  const mine = useMyAddresses();
+  React.useEffect(() => {
+    if (!iwConnected) return;
+    lookupPeople(list.items.map((m) => otherParty(m, mine)?.email ?? "").filter(Boolean));
+  }, [list.items, iwConnected, mine]);
 
   const parentRef = React.useRef<HTMLDivElement>(null);
   const virt = useVirtualizer({ count: list.items.length, getScrollElement: () => parentRef.current, estimateSize: () => rowH, overscan: 12 });
@@ -261,6 +273,8 @@ const Row = React.memo(function Row({
   const sentView = useStore((s) => (s.view.kind === "unified" ? s.view.unified === "sent" : folderById((s.view as { folderId: string }).folderId)?.role === "sent"));
   const who = sentView || isDraft ? (m.to.length ? m.to.map((a) => displayName(a)).join(", ") : "(no recipients)") : displayName(m.from);
   const mtags = m.tags.map((k) => tags.find((t) => t.key === k)).filter(Boolean) as { key: string; name: string; color: string }[];
+  const mine = useMyAddresses();
+  const iwMatch = useIwMatch(otherParty(m, mine)?.email);
 
   const onClick = (e: React.MouseEvent) => {
     if (e.shiftKey) selectRow(m.id, "range");
@@ -303,6 +317,7 @@ const Row = React.memo(function Row({
         <span className={cn("flex min-w-0 items-center gap-2 truncate pr-3", unread && "font-semibold")}>
           {showAccount && account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: account.color }} />}
           <span className="truncate">{who}</span>
+          {iwMatch && <IwBadge match={iwMatch} />}
           {m.threadCount > 1 && <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{m.threadCount}</span>}
         </span>
         <span className="flex min-w-0 items-center gap-2 pr-3">
@@ -319,6 +334,7 @@ const Row = React.memo(function Row({
       <div className={cn("flex h-full gap-3 px-4", compact ? "py-2" : "py-3")}>
         <div className="relative mt-0.5 self-start">
           <Avatar address={sentView ? m.to[0] : m.from} size={compact ? 30 : 36} />
+          {iwMatch && <span aria-hidden className="pointer-events-none absolute -inset-[3px] rounded-full ring-2 ring-[var(--iw-red)]/70" />}
           {showAccount && account && (
             <span aria-hidden title={account.name} className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full ring-2 ring-surface" style={{ background: account.color }} />
           )}
@@ -327,6 +343,7 @@ const Row = React.memo(function Row({
           <div className="flex items-center gap-2">
             {unread && <span aria-hidden className="size-2 shrink-0 rounded-full bg-[var(--iw-red)]" />}
             <span className={cn("min-w-0 truncate text-[13.5px]", unread ? "font-semibold" : "font-medium text-foreground/85")}>{who}</span>
+            {iwMatch && <IwBadge match={iwMatch} />}
             {m.threadCount > 1 && (
               <span className="shrink-0 rounded-full bg-surface-raised px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground ring-1 ring-border">{m.threadCount}</span>
             )}
@@ -385,13 +402,26 @@ const Row = React.memo(function Row({
           {hover}
         </div>
       </Ctx.Trigger>
-      <RowMenu m={m} isDraft={isDraft} />
+      <RowMenu m={m} isDraft={isDraft} iwMatch={iwMatch} />
     </Ctx.Root>
   );
 });
 
-function RowMenu({ m, isDraft }: { m: MessageSummary; isDraft: boolean }) {
+/** "In IntelligentWolf" marker on a row: the person's kind in words, never colour alone (WCAG 1.4.1). */
+function IwBadge({ match }: { match: IwMatch }) {
+  return (
+    <span title={`${match.name} is a ${match.kind} in IntelligentWolf`}
+      className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-[var(--iw-red-wash)] px-1.5 py-px text-[10.5px] font-semibold text-[var(--iw-red-text)]">
+      <UserRound aria-hidden className="size-3" />{match.kind === "lead" ? "Lead" : "Contact"}
+    </span>
+  );
+}
+
+function RowMenu({ m, isDraft, iwMatch }: { m: MessageSummary; isDraft: boolean; iwMatch: IwMatch | null | undefined }) {
   const tags = useStore((s) => s.tags);
+  const iwConnected = useStore((s) => !!s.iw?.connected);
+  const mine = useMyAddresses();
+  const person = otherParty(m, mine);
   const unread = !m.flags.seen;
   return (
     <Ctx.Content>
@@ -414,6 +444,25 @@ function RowMenu({ m, isDraft }: { m: MessageSummary; isDraft: boolean }) {
         ? <Ctx.Item onSelect={() => A.unsnooze([m.id])}><AlarmClockOff /> Un-snooze</Ctx.Item>
         : <Ctx.Sub label="Snooze" icon={<AlarmClock />}><SnoozeItems kind="ctx" onPick={() => window.dispatchEvent(new CustomEvent("wm:snooze-pick"))} /></Ctx.Sub>}
       <Ctx.Item onSelect={() => window.dispatchEvent(new CustomEvent("wm:filter-from", { detail: m }))}><Filter /> Create filter from this sender…</Ctx.Item>
+      {iwConnected && person && !isDraft && (
+        <>
+          <Ctx.Separator />
+          {iwMatch ? (
+            <>
+              <Ctx.Item onSelect={() => openUrl(iwMatch.url).catch((e) => notify.error(e, "Couldn't open IntelligentWolf"))}>
+                <ExternalLink /> Open {iwMatch.name} in IntelligentWolf
+              </Ctx.Item>
+              <Ctx.Item onSelect={() => window.dispatchEvent(new CustomEvent("wm:iw-update", { detail: m.id }))}>
+                <UserPen /> Update {iwMatch.name} from this email…
+              </Ctx.Item>
+            </>
+          ) : iwMatch === null ? (
+            <Ctx.Item onSelect={() => window.dispatchEvent(new CustomEvent("wm:iw-update", { detail: m.id }))}>
+              <UserPlus /> Add {displayName(person)} to IntelligentWolf…
+            </Ctx.Item>
+          ) : null}
+        </>
+      )}
       <Ctx.Sub label="Move to" icon={<FolderInput />}><MoveMenuItems kind="ctx" onPick={(fid) => A.moveTo(fid)} /></Ctx.Sub>
       <Ctx.Sub label="Copy to" icon={<FolderInput />}><MoveMenuItems kind="ctx" onPick={(fid) => A.copyTo(fid)} /></Ctx.Sub>
       <Ctx.Separator />

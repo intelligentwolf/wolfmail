@@ -429,12 +429,36 @@ async fn iw_ai(s: State<'_, AppState>, action: String, message_id: String, instr
     s.on(move |e| async move { e.iw_ai(action, message_id, instructions).await }).await
 }
 #[tauri::command]
-async fn iw_log_email(s: State<'_, AppState>, message_id: String, lead_id: Option<String>) -> R<Value> {
-    s.on(move |e| async move { e.iw_log_email(message_id, lead_id).await }).await
+async fn iw_log_email(s: State<'_, AppState>, message_id: String, lead_id: Option<String>, contact_id: Option<String>, include_text: Option<bool>) -> R<Value> {
+    s.on(move |e| async move { e.iw_log_email(message_id, lead_id, contact_id, include_text.unwrap_or(false)).await }).await
 }
 #[tauri::command]
 async fn iw_create_task(s: State<'_, AppState>, message_id: String, title: String, due: Option<Value>) -> R<Value> {
     s.on(move |e| async move { e.iw_create_task(message_id, title, due).await }).await
+}
+#[tauri::command]
+async fn iw_people(s: State<'_, AppState>, emails: Vec<String>) -> R<Value> {
+    s.on(move |e| async move { e.iw_people(emails).await }).await
+}
+#[tauri::command]
+async fn iw_contact_update(s: State<'_, AppState>, kind: String, id: String, fields: Value, note: Option<String>) -> R<Value> {
+    s.on(move |e| async move { e.iw_contact_update(kind, id, fields, note).await }).await
+}
+#[tauri::command]
+async fn iw_contact_create(s: State<'_, AppState>, email: String, fields: Value) -> R<Value> {
+    s.on(move |e| async move { e.iw_contact_create(email, fields).await }).await
+}
+#[tauri::command]
+async fn iw_chat_send(s: State<'_, AppState>, message: String, message_id: Option<String>, new_thread: Option<bool>) -> R<Value> {
+    s.on(move |e| async move { e.iw_chat_send(message, message_id, new_thread.unwrap_or(false)).await }).await
+}
+#[tauri::command]
+async fn iw_chat_poll(s: State<'_, AppState>, turn: String) -> R<Value> {
+    s.on(move |e| async move { e.iw_chat_poll(turn).await }).await
+}
+#[tauri::command]
+async fn iw_chat_history(s: State<'_, AppState>) -> R<Value> {
+    s.on(move |e| async move { e.iw_chat_history().await }).await
 }
 #[tauri::command]
 async fn iw_booking_link(s: State<'_, AppState>) -> R<Value> {
@@ -631,6 +655,12 @@ pub fn run() {
             iw_ai,
             iw_log_email,
             iw_create_task,
+            iw_people,
+            iw_contact_update,
+            iw_contact_create,
+            iw_chat_send,
+            iw_chat_poll,
+            iw_chat_history,
             iw_booking_link,
             iw_business_mailboxes,
             // Calendar & contacts (pim_cmds.rs)

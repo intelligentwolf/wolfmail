@@ -11,16 +11,17 @@ import { Spinner } from "../../components/ui/misc";
 
 type Phase = { k: "intro" } | { k: "starting" } | { k: "waiting"; code: string; verifyUrl: string; expiresAt: number } | { k: "expired" } | { k: "done" } | { k: "error"; message: string };
 
-const perks = [
-  { icon: UserRound, title: "Who's writing to you", body: "See the sender's lead or customer record, pipeline stage and recent history beside every email." },
-  { icon: Sparkles, title: "Alex drafts and summarises", body: "Summarise long threads and draft replies in your brand voice, paid from your IntelligentWolf credits." },
-  { icon: ListTodo, title: "Turn email into work", body: "Log an email to the CRM or make it a task in one click." },
+const perks = (assistant: string) => [
+  { icon: UserRound, title: "Your contacts, highlighted", body: "Emails from your IntelligentWolf leads and customers are marked in the list, with their record beside every email." },
+  { icon: Sparkles, title: `${assistant}, your assistant`, body: `The little wolf in the corner is your IntelligentWolf assistant: ask about an email, draft replies, summarise threads.` },
+  { icon: ListTodo, title: "Update contacts from email", body: "Right-click an email to open the contact, add the email to their history or update their details from it." },
   { icon: CalendarPlus, title: "Booking links and business mailboxes", body: "Drop your booking link into a reply, and add your IntelligentWolf mailboxes without typing server settings." },
 ];
 
 export function IwConnectDialog() {
   const open = useStore((s) => s.ui.iwConnect);
   const baseUrl = useStore((s) => s.settings?.iwBaseUrl);
+  const assistant = useStore((s) => s.settings?.assistantName || "Mike");
   const [phase, setPhase] = React.useState<Phase>({ k: "intro" });
   const [now, setNow] = React.useState(Date.now());
 
@@ -101,7 +102,7 @@ export function IwConnectDialog() {
       {(phase.k === "intro" || phase.k === "starting") && (
         <div className="space-y-5">
           <ul role="list" className="grid gap-3 sm:grid-cols-2">
-            {perks.map((p) => (
+            {perks(assistant).map((p) => (
               <li key={p.title} className="rounded-card bg-surface-raised p-4 ring-1 ring-border">
                 <p.icon className="mb-2 size-5 text-[var(--iw-red-text)]" />
                 <div className="text-[13.5px] font-semibold">{p.title}</div>
@@ -112,8 +113,9 @@ export function IwConnectDialog() {
           <div className="flex gap-3 rounded-card p-4 ring-1 ring-border">
             <Lock className="mt-0.5 size-5 shrink-0 text-[var(--iw-go-text)]" />
             <p className="text-[13px] leading-relaxed">
-              <strong>Your mail stays on this computer.</strong> IntelligentWolf only sees a message when you press one of its buttons on that message —
-              and then only that one. WolfMail gets its own connection that you can revoke any time from IntelligentWolf's settings.
+              <strong>Your mail stays on this computer.</strong> To mark emails from your contacts, WolfMail asks IntelligentWolf about the
+              senders' addresses — never the emails. A whole email goes only when you choose: a button on it, or sending it to {assistant} with a
+              message. WolfMail gets its own connection that you can disconnect any time, here or on IntelligentWolf's WolfMail page.
             </p>
           </div>
         </div>
@@ -121,7 +123,7 @@ export function IwConnectDialog() {
 
       {phase.k === "waiting" && (
         <div className="space-y-5 text-center">
-          <p className="text-[13px] text-muted-foreground">Your browser has opened IntelligentWolf. Check the code matches, choose your workspace and press <strong className="text-foreground">Connect WolfMail</strong>.</p>
+          <p className="text-[13px] text-muted-foreground">Your browser has opened IntelligentWolf. Sign in if it asks, check the code matches and press <strong className="text-foreground">Connect WolfMail</strong>. It connects the workspace (floor) you're on there.</p>
           <div aria-label={`Pairing code ${phase.code.split("").join(" ")}`} className="mx-auto w-fit rounded-card bg-surface-inset px-8 py-5 font-title text-4xl tracking-[0.18em] tabular-nums ring-1 ring-border selectable">
             {phase.code}
           </div>

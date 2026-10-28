@@ -88,7 +88,7 @@ impl Engine {
     }
 
     pub async fn iw_ai(&self, action: String, message_id: String, instructions: Option<String>) -> Result<Value> {
-        if !["summarise", "draftReply", "triage"].contains(&action.as_str()) {
+        if !["summarise", "draftReply", "triage", "extractContact"].contains(&action.as_str()) {
             return Err(ApiError::invalid("action", "Unknown AI action."));
         }
         let rid: i64 = message_id.parse().map_err(|_| ApiError::not_found("The message"))?;
@@ -118,13 +118,22 @@ impl Engine {
         if let Some(i) = instructions.filter(|s| !s.trim().is_empty()) {
             body["instructions"] = Value::String(clip(&i, 2000));
         }
+        body["assistantName"] = Value::String(self.settings_get().await?.assistant_name);
         let r = self.iw().ai(body).await?;
-        Ok(json!({ "text": r["text"].as_str().unwrap_or(""), "creditsUsed": r["creditsUsed"].clone() }))
+        let mut out = json!({ "text": r["text"].as_str().unwrap_or(""), "creditsUsed": r["creditsUsed"].clone() });
+        if action == "extractContact" {
+            out["fields"] = if r["fields"].is_object() { r["fields"].clone() } else { json!({}) };
+            out["note"] = Value::String(r["note"].as_str().unwrap_or("").to_string());
+        }
+        Ok(out)
     }
 
-    pub async fn iw_log_email(&self, message_id: String, lead_id: Option<String>) -> Result<Value> {
+    /// Put the email on the person's IW timeline. `include_text` sends the whole text (the "update them with the email
+    /// content" right-click); without it only the snippet goes, as before.
+    pub async fn iw_log_email(&self, message_id: String, lead_id: Option<String>, contact_id: Option<String>, include_text: bool) -> Result<Value> {
         let rid: i64 = message_id.parse().map_err(|_| ApiError::not_found("The message"))?;
         let s = self.store().call(move |c| msgstore::get_summary(c, rid)).await?;
+        let text = if include_text { Some(self.message_payload(rid).await?.0["text"].as_str().unwrap_or("").to_string()) } else { None };
         let acct = self.account(&s.account_id).await?;
         let outgoing = acct.identities.iter().any(|i| i.email.eq_ignore_ascii_case(&s.from.email));
         let to: Vec<String> = s.to.iter().map(|a| a.email.clone()).collect();
@@ -140,8 +149,17 @@ impl Engine {
         if let Some(l) = lead_id {
             body["leadId"] = Value::String(l);
         }
-        self.iw().log_email(body).await?;
-        Ok(Value::Null)
+        if let Some(c) = contact_id {
+            body["contactId"] = Value::String(c);
+        }
+        if let Some(t) = text {
+            body["text"] = Value::String(t);
+        }
+        if let Some(n) = s.from.name.clone().filter(|n| !n.trim().is_empty()) {
+            body["fromName"] = Value::String(n);
+        }
+        let r = self.iw().log_email(body).await?;
+        Ok(json!({ "leadId": r["leadId"].clone(), "contactId": r["contactId"].clone() }))
     }
 
     pub async fn iw_create_task(&self, message_id: String, title: String, due: Option<Value>) -> Result<Value> {
@@ -167,5 +185,70 @@ impl Engine {
 
     pub async fn iw_business_mailboxes(&self) -> Result<Value> {
         self.iw().business_mailboxes().await
+    }
+
+    /// Which of these addresses are people in IntelligentWolf (for highlighting the list). Only addresses are sent.
+    pub async fn iw_people(&self, emails: Vec<String>) -> Result<Value> {
+        let mut clean: Vec<String> = emails.into_iter().map(|e| e.trim().to_ascii_lowercase()).filter(|e| e.contains('@')).collect();
+        clean.sort();
+        clean.dedup();
+        if clean.is_empty() {
+            return Ok(json!({}));
+        }
+        let mut out = serde_json::Map::new();
+        // Source: php-api/lib/wolfmail.php WOLFMAIL_PEOPLE_MAX = 200 per request.
+        for chunk in clean.chunks(200) {
+            let r = self.iw().people(chunk).await?;
+            if let Some(m) = r["matches"].as_object() {
+                out.extend(m.clone());
+            }
+        }
+        Ok(Value::Object(out))
+    }
+
+    pub async fn iw_contact_update(&self, kind: String, id: String, fields: Value, note: Option<String>) -> Result<Value> {
+        if kind != "lead" && kind != "contact" {
+            return Err(ApiError::invalid("kind", "Unknown kind of person."));
+        }
+        let mut body = json!({ "kind": kind, "id": id, "fields": if fields.is_object() { fields } else { json!({}) } });
+        if let Some(n) = note.filter(|n| !n.trim().is_empty()) {
+            body["note"] = Value::String(clip(n.trim(), 20_000));
+        }
+        self.iw().contact_update(body).await
+    }
+
+    /// Add the other party of this message to IntelligentWolf as a lead.
+    pub async fn iw_contact_create(&self, email: String, fields: Value) -> Result<Value> {
+        if !email.contains('@') {
+            return Err(ApiError::invalid("email", "Not an email address."));
+        }
+        let body = json!({ "email": email.trim().to_ascii_lowercase(), "fields": if fields.is_object() { fields } else { json!({}) } });
+        self.iw().contact_create(body).await
+    }
+
+    /// One message to the assistant. With `message_id`, the email the user has open goes with it (they choose).
+    pub async fn iw_chat_send(&self, message: String, message_id: Option<String>, new_thread: bool) -> Result<Value> {
+        if message.trim().is_empty() {
+            return Err(ApiError::invalid("message", "Type a message first."));
+        }
+        let mut body = json!({
+            "message": clip(message.trim(), 8000),
+            "assistantName": self.settings_get().await?.assistant_name,
+            "newThread": new_thread,
+        });
+        if let Some(id) = message_id {
+            let rid: i64 = id.parse().map_err(|_| ApiError::not_found("The message"))?;
+            let (m, _, _) = self.message_payload(rid).await?;
+            body["context"] = json!({ "subject": m["subject"], "from": m["from"], "date": m["date"], "text": m["text"] });
+        }
+        self.iw().chat_send(body).await
+    }
+
+    pub async fn iw_chat_poll(&self, turn: String) -> Result<Value> {
+        self.iw().chat_turn(&turn).await
+    }
+
+    pub async fn iw_chat_history(&self) -> Result<Value> {
+        self.iw().chat_history().await
     }
 }
