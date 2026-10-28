@@ -547,6 +547,7 @@ pub fn run() {
                 r.map_err(|e| ApiError::new(ErrorKind::Internal, format!("Could not open {target}: {e}")))
             });
             let sink = Arc::new(TauriSink { app: handle.clone(), tray: Arc::clone(&tray_slot) });
+            wolfmail_core::secrets::set_app_identifier(&app.config().identifier);
             let secrets = Arc::new(AutoStore::detect(&cfg.data_dir));
             let engine = rt.block_on(Engine::start(cfg, Arc::clone(&secrets) as Arc<dyn wolfmail_core::secrets::SecretStore>, sink, opener));
             let settings = match &engine {

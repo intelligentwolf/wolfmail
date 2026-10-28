@@ -8,6 +8,21 @@ use std::collections::HashMap;
 /// Source: docs/IW-INTEGRATION.md "Token stored in the OS keychain (service `WolfMail` …)".
 pub const SERVICE: &str = "WolfMail";
 
+/// The keychain service this copy of WolfMail uses: `WolfMail` for the released app, `WolfMail (<identifier>)` for any
+/// other build (a dev or test identifier). Without this, a test build's IntelligentWolf connection — one fixed key,
+/// `iw-device` — replaced the user's own (28 Oct 2026: the real app showed the test server's "Wolf Garage").
+static SERVICE_NAME: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Call once at start-up, before any secret is read. Source: src-tauri/tauri.conf.json "identifier".
+pub fn set_app_identifier(identifier: &str) {
+    let name = if identifier == "uk.co.intelligentwolf.wolfmail" { SERVICE.to_string() } else { format!("{SERVICE} ({identifier})") };
+    let _ = SERVICE_NAME.set(name);
+}
+
+fn service() -> &'static str {
+    SERVICE_NAME.get().map(String::as_str).unwrap_or(SERVICE)
+}
+
 pub trait SecretStore: Send + Sync {
     fn get(&self, key: &str) -> Result<Option<String>>;
     fn set(&self, key: &str, value: &str) -> Result<()>;
@@ -18,7 +33,7 @@ pub struct KeyringStore;
 
 impl KeyringStore {
     fn entry(key: &str) -> Result<keyring::Entry> {
-        keyring::Entry::new(SERVICE, key).map_err(|e| {
+        keyring::Entry::new(service(), key).map_err(|e| {
             ApiError::new(
                 ErrorKind::Storage,
                 format!("The system keychain is not available ({e}). On Linux, install and unlock a Secret Service provider such as GNOME Keyring or KWallet."),
@@ -280,7 +295,7 @@ pub struct AutoStore {
 /// Probe the OS store with a read of a key that is never written: `NoEntry` (or a value) means it works; any other
 /// error (no Secret Service on D-Bus, locked collection that can't be prompted, …) means it doesn't.
 fn keychain_usable() -> std::result::Result<(), String> {
-    let entry = keyring::Entry::new(SERVICE, "__wolfmail_probe__").map_err(|e| e.to_string())?;
+    let entry = keyring::Entry::new(service(), "__wolfmail_probe__").map_err(|e| e.to_string())?;
     match entry.get_password() {
         Ok(_) | Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(e.to_string()),
