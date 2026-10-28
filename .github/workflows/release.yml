@@ -142,14 +142,14 @@ jobs:
 
           **Verify the build provenance:**
           ```
-          gh attestation verify <file> --repo IntelligentWolf-Ltd/wolfmail
+          gh attestation verify <file> --repo intelligentwolf/wolfmail
           ```
 
           **Verify the cosign signature:**
           ```
           cosign verify-blob \
             --bundle <file>.cosign.bundle \
-            --certificate-identity-regexp 'https://github.com/IntelligentWolf-Ltd/wolfmail/\.github/workflows/release\.yml@.*' \
+            --certificate-identity-regexp 'https://github.com/intelligentwolf/wolfmail/\.github/workflows/release\.yml@.*' \
             --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
             <file>
           ```

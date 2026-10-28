@@ -53,10 +53,10 @@ sha256sum -c SHA256SUMS --ignore-missing                                   # Lin
 shasum -a 256 -c SHA256SUMS --ignore-missing                               # macOS
 Get-FileHash .\<file> -Algorithm SHA256                                   # Windows: compare with SHA256SUMS
 
-gh attestation verify <file> --repo IntelligentWolf-Ltd/wolfmail           # built by this repo's workflow
+gh attestation verify <file> --repo intelligentwolf/wolfmail           # built by this repo's workflow
 
 cosign verify-blob --bundle <file>.cosign.bundle \
-  --certificate-identity-regexp 'https://github.com/IntelligentWolf-Ltd/wolfmail/\.github/workflows/release\.yml@.*' \
+  --certificate-identity-regexp 'https://github.com/intelligentwolf/wolfmail/\.github/workflows/release\.yml@.*' \
   --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' <file>
 ```
 
