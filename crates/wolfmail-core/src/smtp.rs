@@ -122,6 +122,14 @@ pub fn build_message(
         for a in attachments {
             b = b.attachment(a.mime.clone(), a.filename.clone(), a.bytes.clone());
         }
+        // Source: RFC 6047 §2.4 — the iTIP object goes in a text/calendar part whose "method" parameter equals the
+        // METHOD inside it.
+        if let Some(cal) = &draft.calendar {
+            let ct = mail_builder::headers::content_type::ContentType::new("text/calendar")
+                .attribute("method", cal.method.clone())
+                .attribute("charset", "utf-8");
+            b = b.attachment(ct, "invite.ics", cal.ics.clone().into_bytes());
+        }
         b.write_to_vec().map_err(|e| ApiError::internal(format!("Could not build the message: {e}")))
     };
     let mut recipients: Vec<String> = draft.to.iter().chain(&draft.cc).chain(&draft.bcc).map(|a| a.email.clone()).collect();
@@ -299,7 +307,7 @@ mod tests {
             reply_to_message_id: None,
             forward_of_message_id: None,
             attachments: vec![],
-            send_at: None,
+            send_at: None, calendar: None,
         };
         let att = ResolvedAttachment { filename: "a.txt".into(), mime: "text/plain".into(), bytes: b"hello".to_vec() };
         let m = build_message(&d, &ident(), "mid1@wolf.example", &[att], 1_793_095_200_000, true).unwrap();
@@ -338,7 +346,7 @@ mod tests {
             reply_to_message_id: None,
             forward_of_message_id: None,
             attachments: vec![],
-            send_at: None,
+            send_at: None, calendar: None,
         };
         let e = build_message(&d, &ident(), "m@x", &[], 0, true).err().unwrap();
         assert_eq!(e.field.as_deref(), Some("to"));

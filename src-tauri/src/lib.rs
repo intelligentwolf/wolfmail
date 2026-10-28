@@ -18,6 +18,8 @@ use wolfmail_core::model::*;
 use wolfmail_core::oauth::OAuthProvider;
 use wolfmail_core::secrets::KeyringStore;
 
+mod pim_cmds;
+
 type R<T> = Result<T, ApiError>;
 
 struct AppState {
@@ -512,6 +514,32 @@ pub fn run() {
             iw_create_task,
             iw_booking_link,
             iw_business_mailboxes,
+            // Calendar & contacts (pim_cmds.rs)
+            pim_cmds::pim_accounts_list,
+            pim_cmds::pim_oauth_authorize,
+            pim_cmds::pim_account_add,
+            pim_cmds::pim_account_update,
+            pim_cmds::pim_account_remove,
+            pim_cmds::pim_sync_now,
+            pim_cmds::calendars_list,
+            pim_cmds::calendar_update,
+            pim_cmds::calendar_create,
+            pim_cmds::calendar_delete,
+            pim_cmds::events_range,
+            pim_cmds::event_get,
+            pim_cmds::event_save,
+            pim_cmds::event_delete,
+            pim_cmds::address_books_list,
+            pim_cmds::contacts_list,
+            pim_cmds::contact_get,
+            pim_cmds::contact_save,
+            pim_cmds::contact_delete,
+            pim_cmds::contacts_import_vcf,
+            pim_cmds::contacts_export_vcf,
+            pim_cmds::invite_respond,
+            pim_cmds::invite_apply,
+            pim_cmds::pim_import_scan,
+            pim_cmds::pim_import_apply,
         ])
         .run(tauri::generate_context!())
         .expect("error while running WolfMail");

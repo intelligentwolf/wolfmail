@@ -64,6 +64,8 @@ pub(crate) struct Inner {
     pub undo: Mutex<HashMap<String, UndoEntry>>,
     pub pair: Mutex<Option<(String, crate::iw::PairStart)>>,
     pub outbox_wake: Notify,
+    /// Calendar & contacts (own store file + loops): crate::pim.
+    pub pim: crate::pim::Pim,
 }
 
 #[derive(Clone)]
@@ -77,6 +79,7 @@ impl Engine {
     pub async fn start(cfg: EngineConfig, secrets: Arc<dyn SecretStore>, events: Arc<dyn EventSink>, opener: Opener) -> Result<Engine> {
         crate::tls::install_crypto_provider();
         let store = Store::open(&cfg.data_dir.join("wolfmail.sqlite3"))?;
+        let pim = crate::pim::Pim::open(&cfg.data_dir)?;
         let http = reqwest::Client::builder()
             .user_agent(format!("WolfMail/{}", cfg.app_version))
             .timeout(std::time::Duration::from_secs(60))
@@ -94,6 +97,7 @@ impl Engine {
                 undo: Mutex::new(HashMap::new()),
                 pair: Mutex::new(None),
                 outbox_wake: Notify::new(),
+                pim,
             }),
         };
         compose::recover_outbox(&engine).await?;
@@ -103,6 +107,7 @@ impl Engine {
             }
         }
         compose::spawn_outbox_worker(engine.clone());
+        engine.pim_start_background();
         Ok(engine)
     }
 

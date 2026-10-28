@@ -209,6 +209,7 @@ impl Engine {
             forward_of_message_id: None,
             attachments,
             send_at: None,
+            calendar: None,
         };
         let (json, lid, mid) = (serde_json::to_string(&d)?, local_id.clone(), h.message_id.clone());
         self.store()
