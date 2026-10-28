@@ -1,0 +1,75 @@
+# Release: push a tag like v0.2.0 → every platform is built, update bundles are signed with the Tauri updater key,
+# and a GitHub release is published with latest.json for in-app updates.
+#
+# WHERE releases go: this source repo is private, and a private repo's release downloads need a login, so the
+# in-app updater (tauri.conf.json plugins.updater.endpoints) can't read them. Releases are therefore published to a
+# separate PUBLIC repo that holds only installers: IntelligentWolf-Ltd/wolfmail-releases.
+#
+# Secrets this workflow needs (set by Paul — see PROGRESS.md "Needs Paul"):
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD   from ~/.tauri/wolfmail.key(.password)
+#   WOLFMAIL_RELEASES_TOKEN   fine-grained PAT, Contents: read/write on IntelligentWolf-Ltd/wolfmail-releases only
+#   WOLFMAIL_GOOGLE_CLIENT_ID / _SECRET, WOLFMAIL_MS_CLIENT_ID      OAuth app ids (optional; sign-in says "not set up" without)
+# Code signing (Windows Authenticode, Apple notarisation) is added once the certificates exist.
+#
+# Action SHAs: see build.yml header (same pins).
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            args: "--bundles deb,rpm,appimage"
+          - os: windows-latest
+            args: "--bundles msi,nsis"
+          - os: macos-latest
+            args: "--target aarch64-apple-darwin --bundles dmg,app"
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            args: "--target x86_64-apple-darwin --bundles dmg,app"
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: npm
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev rpm
+      - name: Rust target
+        if: matrix.target != ''
+        shell: bash
+        run: rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f
+        env:
+          GITHUB_TOKEN: ${{ secrets.WOLFMAIL_RELEASES_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          WOLFMAIL_GOOGLE_CLIENT_ID: ${{ secrets.WOLFMAIL_GOOGLE_CLIENT_ID }}
+          WOLFMAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.WOLFMAIL_GOOGLE_CLIENT_SECRET }}
+          WOLFMAIL_MS_CLIENT_ID: ${{ secrets.WOLFMAIL_MS_CLIENT_ID }}
+        with:
+          owner: IntelligentWolf-Ltd
+          repo: wolfmail-releases
+          tagName: ${{ github.ref_name }}
+          releaseName: "WolfMail ${{ github.ref_name }}"
+          releaseBody: "Download the installer for your computer below. WolfMail updates itself after this."
+          releaseDraft: false
+          prerelease: false
+          uploadUpdaterJson: true
+          args: ${{ matrix.args }}

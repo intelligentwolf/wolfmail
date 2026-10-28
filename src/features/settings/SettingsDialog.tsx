@@ -1,4 +1,6 @@
 import * as React from "react";
+import { checkForUpdate, installUpdate, restartApp, type UpdateState } from "../../lib/updates";
+import { IW_ENABLED } from "../../lib/features";
 import * as D from "@radix-ui/react-dialog";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -40,8 +42,8 @@ export function SettingsDialog() {
       { id: "accounts", label: "All accounts", icon: Users },
       ...accounts.map((a) => ({ id: `account:${a.id}`, label: a.name, icon: Users, color: a.color, sub: true })),
     ] },
-    { group: "Connections", items: [
-      { id: "iw", label: "IntelligentWolf", icon: Link2Off },
+    { group: IW_ENABLED ? "Connections" : "About", items: [
+      ...(IW_ENABLED ? [{ id: "iw", label: "IntelligentWolf", icon: Link2Off }] : []),
       { id: "about", label: "About WolfMail", icon: Info },
     ] },
   ];
@@ -51,7 +53,7 @@ export function SettingsDialog() {
     <D.Root open={open} onOpenChange={(o) => !o && setUi({ settings: false })}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px]" />
-        <D.Content className="fixed left-1/2 top-1/2 z-50 flex h-[min(720px,calc(100vh-48px))] w-[min(980px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-card bg-popover text-foreground shadow-[var(--shadow-pop)] ring-1 ring-border focus:outline-none">
+        <D.Content aria-modal="true" className="fixed left-1/2 top-1/2 z-50 flex h-[min(720px,calc(100vh-48px))] w-[min(980px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-card bg-popover text-foreground shadow-[var(--shadow-pop)] ring-1 ring-border focus:outline-none">
           <nav aria-label="Settings sections" className="flex w-60 shrink-0 flex-col border-r border-border bg-surface-inset">
             <D.Title className="px-5 pb-2 pt-5 font-title text-xl">Settings</D.Title>
             <D.Description className="sr-only">WolfMail settings</D.Description>
@@ -100,7 +102,7 @@ function Section({ id }: { id: string }) {
     case "compose": return <ComposePage />;
     case "accounts": return <AccountsPage />;
     case "tags": return <TagsPage />;
-    case "iw": return <IwPage />;
+    case "iw": return IW_ENABLED ? <IwPage /> : null;
     case "shortcuts": return <ShortcutsPage />;
     case "about": return <AboutPage />;
     default: return <GeneralPage />;
@@ -630,7 +632,13 @@ function ShortcutsPage() {
 
 function AboutPage() {
   const [version, setVersion] = React.useState<string>();
+  const [upd, setUpd] = React.useState<UpdateState>({ kind: "idle" });
   React.useEffect(() => { getVersion().then(setVersion).catch(() => setVersion(undefined)); }, []);
+  const runCheck = async () => { setUpd({ kind: "checking" }); setUpd(await checkForUpdate()); };
+  const runInstall = async () => {
+    if (upd.kind !== "available") return;
+    try { await installUpdate(upd.update, setUpd); } catch (e) { setUpd({ kind: "error", message: e instanceof Error ? e.message : String(e) }); }
+  };
   return (
     <>
       <PageTitle>About WolfMail</PageTitle>
@@ -642,6 +650,26 @@ function AboutPage() {
           <Button variant="link" className="mt-1 h-auto px-0" onClick={() => openUrl("https://intelligentwolf.com").catch((e) => notify.error(e, "Couldn't open your browser"))}>intelligentwolf.com</Button>
         </div>
       </div>
+      <section aria-label="Updates" className="mt-5 rounded-card bg-surface p-5 ring-1 ring-border">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-[13px] font-semibold">Updates</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground" role="status" aria-live="polite">
+              {upd.kind === "idle" && "WolfMail checks once a day and asks before installing anything."}
+              {upd.kind === "checking" && "Checking…"}
+              {upd.kind === "none" && "You're on the latest version."}
+              {upd.kind === "available" && `Version ${upd.version} is available.`}
+              {upd.kind === "downloading" && `Downloading ${upd.version}… ${upd.total ? Math.round((upd.done / upd.total) * 100) + "%" : ""}`}
+              {upd.kind === "ready" && `Version ${upd.version} is installed — restart to use it.`}
+            </p>
+            {upd.kind === "error" && <p role="alert" className="mt-1 text-xs font-medium text-[var(--iw-red-text)]">Couldn't check for updates: {upd.message}</p>}
+            {upd.kind === "available" && upd.notes && <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{upd.notes}</p>}
+          </div>
+          {upd.kind === "available" ? <Button onClick={runInstall}>Download and install</Button>
+            : upd.kind === "ready" ? <Button onClick={restartApp}>Restart now</Button>
+            : <Button variant="outline" disabled={upd.kind === "checking" || upd.kind === "downloading"} onClick={runCheck}>Check for updates</Button>}
+        </div>
+      </section>
     </>
   );
 }

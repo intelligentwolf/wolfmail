@@ -4,3 +4,9 @@ target/
 src-tauri/gen/
 *.local
 .env
+.claude/
+packaging/flatpak/build-dir/
+packaging/flatpak/repo/
+packaging/flatpak/.flatpak-builder/
+packaging/flatpak/*.deb
+packaging/flatpak/*.flatpak

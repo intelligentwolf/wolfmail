@@ -5,6 +5,7 @@ import {
 } from "lucide-react";
 import { useStore, getState, setView, toggleCollapsed, setUi, openComposer, refreshFolders } from "../../lib/store";
 import { moveTo, copyTo } from "../actions";
+import { IW_ENABLED } from "../../lib/features";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
 import type { Account, Folder, FolderRole, UnifiedView } from "../../lib/types";
@@ -118,7 +119,7 @@ export function Sidebar() {
       </div>
 
       <div className="flex items-center gap-1 border-t border-border px-3 py-2">
-        <IwBadge />
+        {IW_ENABLED && <IwBadge />}
         <div className="flex-1" />
         <IconButton label="Settings" shortcut={`${modKey}+,`} size="iconSm" onClick={() => setUi({ settings: "general" })}>
           <SettingsIcon />

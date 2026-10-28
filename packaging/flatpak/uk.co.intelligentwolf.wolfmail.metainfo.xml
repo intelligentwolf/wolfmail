@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>uk.co.intelligentwolf.wolfmail</id>
+  <launchable type="desktop-id">uk.co.intelligentwolf.wolfmail.desktop</launchable>
+  <name>WolfMail</name>
+  <summary>Fast, private email for all your inboxes</summary>
+  <developer id="uk.co.intelligentwolf">
+    <name>IntelligentWolf Ltd</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LicenseRef-proprietary</project_license>
+  <url type="homepage">https://intelligentwolf.com</url>
+  <content_rating type="oars-1.1"/>
+  <branding>
+    <color type="primary" scheme_preference="light">#c41e1e</color>
+    <color type="primary" scheme_preference="dark">#c41e1e</color>
+  </branding>
+  <description>
+    <p>WolfMail keeps every email account in one window: Gmail, Microsoft 365 and any IMAP mailbox.
+       New mail arrives the moment it lands, remote images and tracking pixels are blocked, and your
+       mail stays on your computer.</p>
+    <p>See all your inboxes side by side, search everything instantly, and work from the keyboard.</p>
+  </description>
+  <keywords>
+    <keyword>email</keyword>
+    <keyword>mail</keyword>
+    <keyword>imap</keyword>
+  </keywords>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+  <categories>
+    <category>Office</category>
+    <category>Email</category>
+  </categories>
+</component>

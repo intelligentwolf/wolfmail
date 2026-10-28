@@ -5,8 +5,9 @@ import { X } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button } from "./button";
 
-// Radix Dialog/AlertDialog give the ARIA contract (role, aria-modal, labelledby, focus trap, Escape, focus return)
-// — W3C APG dialog + alertdialog patterns. Every dialog here MUST pass a title.
+// Radix Dialog/AlertDialog give role, labelledby, focus trap, Escape and focus return (W3C APG dialog + alertdialog).
+// Radix 1.1.6 does NOT set aria-modal (checked in its dist), so it is set explicitly on every Content below.
+// Every dialog here MUST pass a title.
 
 const overlay = "fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=open]:fade-in-0";
 const panel =
@@ -22,7 +23,7 @@ export function Dialog({
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className={overlay} />
-        <D.Content className={cn(panel, "w-[min(560px,calc(100vw-32px))]", className)}>
+        <D.Content aria-modal="true" className={cn(panel, "w-[min(560px,calc(100vw-32px))]", className)}>
           <div className="flex items-start gap-3 px-6 pt-5 pb-3">
             <div className="min-w-0 flex-1">
               <D.Title className="font-title text-lg">{title}</D.Title>
@@ -55,7 +56,7 @@ export function ConfirmDialog({
     <AD.Root open={open} onOpenChange={onOpenChange}>
       <AD.Portal>
         <AD.Overlay className={overlay} />
-        <AD.Content className={cn(panel, "w-[min(440px,calc(100vw-32px))] p-6")}>
+        <AD.Content aria-modal="true" className={cn(panel, "w-[min(440px,calc(100vw-32px))] p-6")}>
           <AD.Title className="font-title text-lg">{title}</AD.Title>
           <AD.Description asChild>
             <div className="mt-2 text-sm text-muted-foreground">{body}</div>

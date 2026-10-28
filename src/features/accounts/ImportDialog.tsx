@@ -1,4 +1,5 @@
 import * as React from "react";
+import { secretsPlace } from "../../lib/features";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { CheckCircle2, FolderOpen, HardDrive, KeyRound, Lock, PackageOpen, RefreshCw, ShieldCheck } from "lucide-react";
 import { api } from "../../lib/api";
@@ -14,6 +15,7 @@ import { EmptyState, Skeleton, Spinner } from "../../components/ui/misc";
 const providerBadge: Record<Provider, string> = { imap: "IMAP", gmail: "Google", outlook: "Microsoft" };
 
 export function ImportDialog() {
+  const secretsBackend = useStore((s) => s.secrets?.backend);
   const open = useStore((s) => s.ui.importer);
   const existing = useStore((s) => s.accounts);
   const [step, setStep] = React.useState<"pick" | "finish">("pick");
@@ -90,7 +92,7 @@ export function ImportDialog() {
       title={step === "pick" ? "Import from Betterbird or Thunderbird" : "Sign in to your imported accounts"}
       description={step === "pick"
         ? "WolfMail copies your accounts, identities, signatures, sending servers and tags. Your mail stays on the server and syncs fresh."
-        : "Passwords are never copied from Betterbird — WolfMail doesn't read its password store. Enter each one once; it goes into your system keychain."}
+        : "Passwords are never copied from Betterbird — WolfMail doesn't read its password store. Enter each one once; it goes into " + secretsPlace(secretsBackend) + "."}
       className="w-[min(720px,calc(100vw-32px))]"
       footer={step === "pick" ? (
         <>
@@ -184,6 +186,7 @@ function FinishList({ accounts }: { accounts: Account[] }) {
 }
 
 function FinishRow({ account }: { account: Account }) {
+  const secretsBackend = useStore((s) => s.secrets?.backend);
   const [pw, setPw] = React.useState("");
   const [err, setErr] = React.useState<string>();
   const [busy, setBusy] = React.useState(false);
@@ -251,7 +254,7 @@ function FinishRow({ account }: { account: Account }) {
         </form>
       )}
       {!done && oauth && err && <p role="alert" className="mt-2 text-xs font-medium text-[var(--iw-red-text)]">{err}</p>}
-      {done && !oauth && <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck className="size-3.5" /> Password stored in your system keychain.</p>}
+      {done && !oauth && <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground"><ShieldCheck className="size-3.5" /> Password stored in {secretsPlace(secretsBackend)}.</p>}
     </li>
   );
 }

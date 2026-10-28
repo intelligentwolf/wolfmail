@@ -3,6 +3,7 @@ import { Download, UserPlus, Link2, ShieldCheck, Zap, Keyboard, ArrowRight } fro
 import { api } from "../../lib/api";
 import { setUi } from "../../lib/store";
 import { Button } from "../../components/ui/button";
+import { IW_ENABLED } from "../../lib/features";
 
 /** First run: one screen, three ways in. Import is first because most people arrive from Thunderbird/Betterbird
  *  with many accounts already set up (Paul's own profile has 11). */
@@ -27,11 +28,11 @@ export function Welcome() {
           <img src="/icon.png" alt="" className="mb-5 size-16 rounded-2xl shadow-[var(--shadow-card)]" />
           <h1 className="font-title text-[40px] leading-none tracking-tight">Welcome to WolfMail</h1>
           <p className="mt-3 max-w-xl text-[15px] text-muted-foreground">
-            Every inbox in one fast, private window — with your IntelligentWolf CRM and Alex right beside your mail.
+            {IW_ENABLED ? "Every inbox in one fast, private window — with your IntelligentWolf CRM and Alex right beside your mail." : "Every inbox in one fast, private window."}
           </p>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className={`grid gap-4 ${IW_ENABLED ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
           <Card
             primary
             icon={<Download className="size-5" />}
@@ -41,7 +42,7 @@ export function Welcome() {
             onClick={() => setUi({ importer: true })}
           />
           <Card icon={<UserPlus className="size-5" />} title="Add an account" body="Gmail, Microsoft 365, or any IMAP mailbox — we find the server settings for you." cta="Add account" onClick={() => setUi({ addAccount: true })} />
-          <Card icon={<Link2 className="size-5" />} title="Connect IntelligentWolf" body="See who's writing in your CRM, summarise threads with Alex, and turn emails into tasks." cta="Connect" onClick={() => setUi({ iwConnect: true })} />
+          {IW_ENABLED && <Card icon={<Link2 className="size-5" />} title="Connect IntelligentWolf" body="See who's writing in your CRM, summarise threads with Alex, and turn emails into tasks." cta="Connect" onClick={() => setUi({ iwConnect: true })} />}
         </div>
 
         <ul className="mt-10 grid gap-3 text-[13px] text-muted-foreground sm:grid-cols-3">

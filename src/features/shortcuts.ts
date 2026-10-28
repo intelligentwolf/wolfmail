@@ -2,6 +2,7 @@ import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import { getState, moveCursor, openComposer, selectAll, setUi, setView, setState } from "../lib/store";
 import { modKey } from "../lib/utils";
+import { modalOpen } from "../lib/dom";
 import * as A from "./actions";
 import { newDraftFor } from "./compose/drafts";
 
@@ -64,7 +65,7 @@ export function installShortcuts(): () => void {
 
     if (typingTarget(e.target)) return;
     // A dialog is open (Radix sets aria-modal on it) — let it own the keyboard.
-    if (document.querySelector('[role="dialog"][aria-modal="true"], [role="alertdialog"]')) return;
+    if (modalOpen()) return;
     if (s.composers.some((c) => !c.minimized) && (e.target as HTMLElement | null)?.closest?.('[role="dialog"]')) return;
 
     if (mod) {
