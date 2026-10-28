@@ -21,7 +21,7 @@ const perks = (assistant: string) => [
 export function IwConnectDialog() {
   const open = useStore((s) => s.ui.iwConnect);
   const baseUrl = useStore((s) => s.settings?.iwBaseUrl);
-  const assistant = useStore((s) => s.settings?.assistantName || "Mike");
+  const assistant = useStore((s) => s.settings?.assistantName || "Alex");
   const [phase, setPhase] = React.useState<Phase>({ k: "intro" });
   const [now, setNow] = React.useState(Date.now());
 

@@ -257,7 +257,7 @@ impl IwClient<'_> {
 }
 
 /// The assistant's name: 1–24 letters, spaces, hyphens or apostrophes, starting with a letter.
-/// Source: IntelligentWolf php-api/lib/wolfmail.php wolfmail_assistant_name() — anything else is "Mike" there.
+/// Source: IntelligentWolf php-api/lib/wolfmail.php wolfmail_assistant_name() — anything else is "Alex" there.
 pub fn valid_assistant_name(name: &str) -> bool {
     let n = name.trim();
     let count = n.chars().count();
@@ -393,13 +393,13 @@ mod tests {
 
     #[test]
     fn assistant_names() {
-        assert!(valid_assistant_name("Mike"));
+        assert!(valid_assistant_name("Alex"));
         assert!(valid_assistant_name("D'Arcy-Jo"));
         assert!(valid_assistant_name("Zoë"));
         assert!(!valid_assistant_name(""));
         assert!(!valid_assistant_name("  "));
-        assert!(!valid_assistant_name("-Mike"));
-        assert!(!valid_assistant_name("Mike<b>"));
+        assert!(!valid_assistant_name("-Alex"));
+        assert!(!valid_assistant_name("Alex<b>"));
         assert!(!valid_assistant_name(&"a".repeat(25)));
     }
 

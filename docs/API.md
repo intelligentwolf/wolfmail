@@ -114,7 +114,7 @@ type Settings = {
   markReadAfterMs: number;    // -1 = never automatically
   iwBaseUrl: string;          // default "https://intelligentwolf.com/api"; must be https (http only to 127.0.0.1)
   showAssistant: boolean;     // default true: the assistant wolf in the bottom-left corner (mail view)
-  assistantName: string;      // default "Mike"; 1–24 letters, spaces, hyphens, apostrophes (iw::valid_assistant_name)
+  assistantName: string;      // default "Alex"; 1–24 letters, spaces, hyphens, apostrophes (iw::valid_assistant_name)
 };
 
 type ImportCandidate = {

@@ -617,9 +617,9 @@ function IwPage() {
 const NAME_RE = /^\p{L}[\p{L} '\-]{0,23}$/u;
 function AssistantCard() {
   const settings = useStore((s) => s.settings);
-  const [name, setName] = React.useState(settings?.assistantName ?? "Mike");
+  const [name, setName] = React.useState(settings?.assistantName ?? "Alex");
   const [err, setErr] = React.useState<string>();
-  React.useEffect(() => { setName(settings?.assistantName ?? "Mike"); }, [settings?.assistantName]);
+  React.useEffect(() => { setName(settings?.assistantName ?? "Alex"); }, [settings?.assistantName]);
   if (!settings) return null;
   const save = (e?: React.FormEvent) => {
     e?.preventDefault();

@@ -10,9 +10,9 @@ import { Spinner } from "../../components/ui/misc";
 import { invalidatePeople } from "../iw/people";
 
 /**
- * The little wolf in the bottom-left corner — Alex from IntelligentWolf, called whatever the user likes ("Mike" by
+ * The little wolf in the bottom-left corner — Alex from IntelligentWolf, called whatever the user likes ("Alex" by
  * default; Settings → IntelligentWolf). Paul, 28 Oct 2026: "a little wolf (see how intelligent wolf does Alex) called
- * Mike (the user can change them) that sits in the bottom left corner and works like Alex".
+ * Alex (the user can change them) that sits in the bottom left corner and works like Alex".
  *
  * Who and what: someone in their inbox wants to ask their IntelligentWolf assistant about an email ("who is this?",
  * "draft a reply", "make a task for Friday") without leaving WolfMail. Flow: click the wolf → the chat opens above him
@@ -167,7 +167,7 @@ function useRoam(enabled: boolean) {
 
 export function Assistant() {
   const show = useStore((s) => s.settings?.showAssistant ?? true);
-  const name = useStore((s) => s.settings?.assistantName || "Mike");
+  const name = useStore((s) => s.settings?.assistantName || "Alex");
   const connected = useStore((s) => !!s.iw?.connected);
   const openRow = useStore(selectOpenRow);
   const [open, setOpen] = React.useState(false);

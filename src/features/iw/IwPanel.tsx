@@ -59,7 +59,7 @@ function PersonCard({ email, name, row }: { email: string; name?: string; row: M
   const [summary, setSummary] = React.useState<{ text: string; credits: number } | null>(null);
   const [busy, setBusy] = React.useState<null | "sum" | "log">(null);
   const [taskOpen, setTaskOpen] = React.useState(false);
-  const assistant = useStore((s) => s.settings?.assistantName || "Mike");
+  const assistant = useStore((s) => s.settings?.assistantName || "Alex");
 
   React.useEffect(() => {
     let live = true;

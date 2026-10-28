@@ -1,7 +1,7 @@
 # WolfMail ↔ IntelligentWolf
 
 WolfMail works fully without IntelligentWolf. Pairing is optional and unlocks contact highlighting, the sender
-sidebar, "Update contact from this email", the assistant wolf in the corner (Alex, called "Mike" by default — the user
+sidebar, "Update contact from this email", the assistant wolf in the corner (Alex, under his own name by default — the user
 renames him in Settings → IntelligentWolf), AI, tasks, booking links and one-click business mailboxes.
 **Only senders' addresses are sent automatically** (to highlight contacts). **Mail content goes only when the user
 chooses**: an IW action on a message (AI, "Log to CRM", "Update … from this email", "Make task"), or a chat message

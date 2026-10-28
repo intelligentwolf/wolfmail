@@ -514,8 +514,8 @@ impl Default for Settings {
             // Source: docs/IW-INTEGRATION.md "Base URL".
             iw_base_url: "https://intelligentwolf.com/api".into(),
             show_assistant: true,
-            // Paul, 28 Oct 2026: "a little wolf … called Mike (the user can change them)".
-            assistant_name: "Mike".into(),
+            // Paul, 28 Oct 2026: "a little wolf … (the user can change them)", then "change mike to alex".
+            assistant_name: "Alex".into(),
         }
     }
 }

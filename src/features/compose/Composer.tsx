@@ -56,7 +56,7 @@ function ComposerWindow({ c }: { c: Composer }) {
   const settings = useStore((s) => s.settings);
   const accounts = useStore((s) => s.accounts);
   const iwConnected = useStore((s) => !!s.iw?.connected);
-  const assistant = settings?.assistantName || "Mike";
+  const assistant = settings?.assistantName || "Alex";
   const [draft, setDraft] = React.useState<DraftInput>(c.draft);
   const [showCc, setShowCc] = React.useState(c.draft.cc.length > 0);
   const [showBcc, setShowBcc] = React.useState(c.draft.bcc.length > 0);

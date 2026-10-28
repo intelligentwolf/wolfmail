@@ -42,7 +42,7 @@ type Change = { value: string; on: boolean };
 
 function UpdateContactDialog({ row, onClose }: { row: MessageSummary; onClose: () => void }) {
   const accounts = useStore((s) => s.accounts);
-  const assistant = useStore((s) => s.settings?.assistantName || "Mike");
+  const assistant = useStore((s) => s.settings?.assistantName || "Alex");
   const mine = React.useMemo(() => new Set(accounts.flatMap((a) => a.identities.map((i) => i.email.toLowerCase()))), [accounts]);
   const who = otherParty(row, mine) ?? row.from;
   const [person, setPerson] = React.useState<IwPerson | null | undefined>(undefined);
