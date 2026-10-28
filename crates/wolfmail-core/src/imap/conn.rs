@@ -219,15 +219,30 @@ pub async fn connect(cfg: &ServerConfig, cred: &Credential) -> Result<Conn> {
         Err(_) => return Err(ApiError::network(format!("{host} did not answer the sign-in."))),
         Ok(Err((e, _))) => {
             let base = map_imap_err(e);
-            return Err(match base.kind {
-                ErrorKind::Server => ApiError::auth(format!(
-                    "Sign-in to {host} failed. Check the user name and password{}.",
+            if base.kind != ErrorKind::Server {
+                return Err(base);
+            }
+            // A refused login is not always a wrong password. RFC 5530 response codes say which: UNAVAILABLE,
+            // LIMIT, INUSE and SERVERBUG are temporary (retry later, keep the password); AUTHENTICATIONFAILED and
+            // friends mean the credentials are wrong. Servers that send no code but say "too many"/"try again"
+            // are treated as temporary too. Seen 28 Oct 2026: two StackMail accounts that had been syncing were
+            // marked "check your password" after a burst of reconnects, and auth errors stop retrying by design.
+            let said = base.message.to_ascii_uppercase();
+            let temporary = ["[UNAVAILABLE]", "[LIMIT]", "[INUSE]", "[SERVERBUG]", "TOO MANY", "TRY AGAIN", "TEMPORAR", "RATE LIMIT"]
+                .iter()
+                .any(|k| said.contains(k));
+            let server_words = base.message.trim_start_matches("The mail server refused: ").to_string();
+            return Err(if temporary {
+                ApiError::network(format!("{host} is refusing sign-ins for the moment ({server_words}). WolfMail will try again."))
+            } else {
+                ApiError::auth(format!(
+                    "Sign-in to {host} failed{}. Check the user name and password{}.",
+                    if server_words.is_empty() { String::new() } else { format!(" ({server_words})") },
                     match cred {
                         Credential::OAuth { .. } => " (or reconnect the account)",
                         _ => "",
                     }
-                )),
-                _ => base,
+                ))
             });
         }
         Ok(Ok(s)) => s,

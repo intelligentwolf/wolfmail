@@ -63,6 +63,25 @@ pub enum Fetch<T> {
     Status(u16),
 }
 
+/// Gmail per-user quota is 250 units/second and users.messages.get costs 5 units (Gmail API "Usage limits"), so
+/// unpaced parallel fetches hit `rateLimitExceeded` at once — seen on Paul's first real Gmail sync (28 Oct 2026):
+/// one message stored, then the pass failed and backed off. Every Gmail request takes a slot from this pacer:
+/// 40 requests/second (at most 200 units/s even if all are gets), shared by all Gmail accounts in the process.
+const GMAIL_MIN_GAP: std::time::Duration = std::time::Duration::from_millis(25);
+static GMAIL_NEXT_SLOT: std::sync::LazyLock<tokio::sync::Mutex<tokio::time::Instant>> =
+    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(tokio::time::Instant::now()));
+
+async fn gmail_pace() {
+    let wait_until = {
+        let mut next = GMAIL_NEXT_SLOT.lock().await;
+        let now = tokio::time::Instant::now();
+        let slot = if *next > now { *next } else { now };
+        *next = slot + GMAIL_MIN_GAP;
+        slot
+    };
+    tokio::time::sleep_until(wait_until).await;
+}
+
 #[derive(Clone)]
 pub struct ApiClient {
     http: reqwest::Client,
@@ -109,6 +128,9 @@ impl ApiClient {
         let mut attempt = 0;
         loop {
             attempt += 1;
+            if !self.graph {
+                gmail_pace().await;
+            }
             let mut req = build().bearer_auth(&self.token);
             if self.graph {
                 // Source: Graph "Obtain immutable identifiers" — the header applies only to the request it is on,

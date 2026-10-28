@@ -143,6 +143,26 @@ fn resolve_dir(profile: &Path, prefs: &Prefs, srv: &str) -> Option<PathBuf> {
 }
 
 /// Read one profile's prefs.js into importable accounts.
+/// WolfMail keeps one account per address, but a Thunderbird profile can hold the same address twice — Paul's had
+/// paul@wolf.uk.com on StackMail (old, password) and on Google Workspace (current, OAuth), and the import kept the
+/// first and silently dropped the Google one (28 Oct 2026). Keep one per address, preferring a Google/Microsoft
+/// sign-in account (the provider login is the live mailbox; a duplicate password server is usually a leftover),
+/// otherwise the first in Thunderbird's own account order.
+fn dedupe_by_address(accounts: Vec<ImportAccount>) -> Vec<ImportAccount> {
+    let mut out: Vec<ImportAccount> = Vec::new();
+    for a in accounts {
+        match out.iter().position(|x| x.email.eq_ignore_ascii_case(&a.email)) {
+            None => out.push(a),
+            Some(i) => {
+                if out[i].provider == Provider::Imap && a.provider != Provider::Imap {
+                    out[i] = a;
+                }
+            }
+        }
+    }
+    out
+}
+
 pub fn read_profile(profile: &Path) -> Result<ImportCandidate> {
     let src = std::fs::read_to_string(profile.join("prefs.js"))
         .map_err(|e| ApiError::not_found(&format!("prefs.js in {} ({e})", profile.display())))?;
@@ -236,6 +256,7 @@ pub fn read_profile(profile: &Path) -> Result<ImportCandidate> {
         })
         .collect();
     tags.sort_by(|a, b| a.key.cmp(&b.key));
+    let accounts = dedupe_by_address(accounts);
     let lower = profile.to_string_lossy().to_ascii_lowercase();
     Ok(ImportCandidate {
         source: if lower.contains("betterbird") { "betterbird".into() } else { "thunderbird".into() },

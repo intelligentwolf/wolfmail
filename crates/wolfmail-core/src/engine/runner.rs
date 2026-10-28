@@ -335,8 +335,17 @@ async fn pass(engine: &Engine, acct: &Account, conn: &mut Option<Conn>, inbox_on
     Ok((more, has_idle))
 }
 
+/// Shortest IDLE refresh WolfMail will use when a server drops idle connections early.
+const IDLE_REISSUE_MIN: Duration = Duration::from_secs(45);
+
 async fn idle_loop(engine: Engine, account_id: String, handle: Arc<AccountHandle>) {
     let mut backoff = BACKOFF_MIN;
+    // RFC 2177 asks servers to allow ~29 minutes of IDLE, so 25 minutes is the default. Some servers drop idle
+    // connections far sooner — StackMail (20i) closes them after exactly 2 minutes (measured 28 Oct 2026) — and
+    // every drop meant a full new LOGIN, ~200 logins/hour across Paul's 7 StackMail accounts, after which the
+    // server started refusing sign-ins. When IDLE is dropped early, learn the server's limit and re-issue IDLE
+    // (DONE + IDLE on the same connection, no new login) at 75% of it from then on.
+    let mut reissue = IDLE_REISSUE;
     loop {
         let acct = match engine.account(&account_id).await {
             Ok(a) if a.enabled => a,
@@ -361,8 +370,22 @@ async fn idle_loop(engine: Engine, account_id: String, handle: Arc<AccountHandle
             loop {
                 let mut idle = session.idle();
                 idle.init().await.map_err(crate::imap::conn::map_imap_err)?;
-                let (fut, _stop) = idle.wait_with_timeout(IDLE_REISSUE);
-                let r = fut.await.map_err(crate::imap::conn::map_imap_err)?;
+                let started = tokio::time::Instant::now();
+                let (fut, _stop) = idle.wait_with_timeout(reissue);
+                let r = match fut.await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let lived = started.elapsed();
+                        if lived < reissue {
+                            let learned = (lived * 3 / 4).max(IDLE_REISSUE_MIN);
+                            if learned < reissue {
+                                tracing::info!(account = %account_id, "server dropped IDLE after {}s; re-issuing every {}s", lived.as_secs(), learned.as_secs());
+                                reissue = learned;
+                            }
+                        }
+                        return Err(crate::imap::conn::map_imap_err(e));
+                    }
+                };
                 drop(_stop);
                 session = idle.done().await.map_err(crate::imap::conn::map_imap_err)?;
                 match r {
