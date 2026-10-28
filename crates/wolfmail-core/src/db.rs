@@ -163,6 +163,28 @@ const MIGRATIONS: &[&str] = &[
         ('$label4', 'To Do', '#3333FF', 4),
         ('$label5', 'Later', '#993399', 5);
     "#,
+    // v2 — Gmail API / Microsoft Graph accounts (providers/). Source: docs/API.md "Engine notes → Providers".
+    // remote_id: Gmail message id / Graph immutable message id (folders: Gmail label id / Graph folder id).
+    // message_labels: a Gmail message lives in ONE row (in the account's "All Mail" folder) and belongs to every
+    //   other label folder through this table — no duplicate rows or bodies per label.
+    // sync_gen: generation stamp of the last full listing that saw the row; rows left behind after a completed
+    //   full listing were deleted on the server while we were not watching (history expired / delta reset).
+    r#"
+    ALTER TABLE messages ADD COLUMN remote_id TEXT;
+    ALTER TABLE messages ADD COLUMN sync_gen INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX messages_remote ON messages(account_id, remote_id);
+    ALTER TABLE folders ADD COLUMN remote_id TEXT;
+    ALTER TABLE folders ADD COLUMN sync_state TEXT;
+    CREATE INDEX folders_remote ON folders(account_id, remote_id);
+    ALTER TABLE accounts ADD COLUMN api_state TEXT;
+    ALTER TABLE drafts ADD COLUMN server_remote_id TEXT;
+    CREATE TABLE message_labels (
+        message_rowid INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+        folder_id INTEGER NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+        PRIMARY KEY(message_rowid, folder_id)
+    );
+    CREATE INDEX message_labels_folder ON message_labels(folder_id);
+    "#,
 ];
 
 #[derive(Clone)]

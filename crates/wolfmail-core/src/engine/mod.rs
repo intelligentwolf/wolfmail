@@ -2,6 +2,7 @@
 //! and the IntelligentWolf client. Every public `async fn` here is one command in docs/API.md.
 // Source: docs/API.md "Commands" and "Events".
 mod accounts;
+mod apiops;
 mod compose;
 mod iwcmds;
 mod messages;
@@ -40,6 +41,8 @@ pub struct EngineConfig {
 pub(crate) struct UndoEntry {
     pub expires_at: i64,
     pub moves: Vec<UndoMove>,
+    /// Gmail / Graph changes to reverse (accounts on a provider API).
+    pub api: Vec<apiops::ApiUndo>,
 }
 
 pub(crate) struct UndoMove {
@@ -64,6 +67,8 @@ pub(crate) struct Inner {
     pub undo: Mutex<HashMap<String, UndoEntry>>,
     pub pair: Mutex<Option<(String, crate::iw::PairStart)>>,
     pub outbox_wake: Notify,
+    /// Gmail / Graph API roots (production by default; tests point them at a local mock).
+    pub api_bases: crate::providers::ApiBases,
 }
 
 #[derive(Clone)]
@@ -75,6 +80,17 @@ impl Engine {
     /// Open (or create) the profile and start syncing every enabled account plus the outbox worker.
     /// Must be called from inside a tokio runtime.
     pub async fn start(cfg: EngineConfig, secrets: Arc<dyn SecretStore>, events: Arc<dyn EventSink>, opener: Opener) -> Result<Engine> {
+        Self::start_with_bases(cfg, crate::providers::ApiBases::default(), secrets, events, opener).await
+    }
+
+    /// `start` with explicit Gmail / Graph API roots (integration tests use a local mock server).
+    pub async fn start_with_bases(
+        cfg: EngineConfig,
+        api_bases: crate::providers::ApiBases,
+        secrets: Arc<dyn SecretStore>,
+        events: Arc<dyn EventSink>,
+        opener: Opener,
+    ) -> Result<Engine> {
         crate::tls::install_crypto_provider();
         let store = Store::open(&cfg.data_dir.join("wolfmail.sqlite3"))?;
         let http = reqwest::Client::builder()
@@ -94,6 +110,7 @@ impl Engine {
                 undo: Mutex::new(HashMap::new()),
                 pair: Mutex::new(None),
                 outbox_wake: Notify::new(),
+                api_bases,
             }),
         };
         compose::recover_outbox(&engine).await?;
@@ -185,8 +202,10 @@ impl Engine {
             .store()
             .call(|c| {
                 Ok(c.query_row(
-                    "SELECT COUNT(*) FROM messages m JOIN folders f ON f.id=m.folder_id JOIN accounts a ON a.id=m.account_id
-                     WHERE f.role='inbox' AND m.seen=0 AND a.enabled=1",
+                    "SELECT COUNT(*) FROM messages m JOIN accounts a ON a.id=m.account_id
+                     WHERE m.seen=0 AND a.enabled=1
+                       AND (m.folder_id IN (SELECT id FROM folders WHERE role='inbox')
+                            OR m.id IN (SELECT ml.message_rowid FROM message_labels ml JOIN folders f ON f.id=ml.folder_id WHERE f.role='inbox'))",
                     [],
                     |r| r.get::<_, i64>(0),
                 )?)

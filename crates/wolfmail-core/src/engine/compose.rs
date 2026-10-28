@@ -76,18 +76,40 @@ impl Engine {
         draft.id = Some(id.clone());
         let json = serde_json::to_string(&draft)?;
         let (id2, json2) = (id.clone(), json.clone());
-        let (old_folder, old_uid, mid): (Option<i64>, Option<i64>, Option<String>) = self
+        let (old_folder, old_uid, mid, old_remote): (Option<i64>, Option<i64>, Option<String>, Option<String>) = self
             .store()
             .call(move |c| {
                 c.execute(
                     "INSERT INTO drafts(id, json, updated_at) VALUES (?1, ?2, ?3) ON CONFLICT(id) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at",
                     params![id2, json2, now_ms()],
                 )?;
-                Ok(c.query_row("SELECT server_folder_id, server_uid, server_message_id FROM drafts WHERE id=?1", params![id2], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                Ok(c.query_row("SELECT server_folder_id, server_uid, server_message_id, server_remote_id FROM drafts WHERE id=?1", params![id2], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
                 })?)
             })
             .await?;
+
+        if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            // Gmail drafts.create/update; Graph creates the new version and deletes the old (providers/).
+            let res: Result<()> = async {
+                let atts = self.resolve_attachments(&draft).await?;
+                let mid = mid.unwrap_or_else(|| smtp::new_message_id(&ident.email));
+                let built = smtp::build_message(&draft, &ident, &mid, &atts, now_ms(), false)?;
+                let reply_row = draft.reply_to_message_id.as_deref().and_then(|r| r.parse::<i64>().ok());
+                let remote = self.api_save_draft(&acct, old_remote, &built.copy, reply_row).await?;
+                let id3 = id.clone();
+                self.store()
+                    .call(move |c| {
+                        c.execute("UPDATE drafts SET server_remote_id=?2, server_message_id=?3 WHERE id=?1", params![id3, remote, mid])?;
+                        Ok(())
+                    })
+                    .await?;
+                self.sync_now(Some(acct.id.clone())).await?;
+                Ok(())
+            }
+            .await;
+            return Ok(DraftSaved { id, server_saved: res.is_ok(), server_error: res.err().map(|e| e.message) });
+        }
 
         // Server copy: APPEND the new version, then remove the old one.
         let res: Result<()> = async {
@@ -158,7 +180,10 @@ impl Engine {
             .store()
             .call(move |c| {
                 Ok(c.query_row(
-                    "SELECT d.id FROM drafts d JOIN messages m ON m.folder_id=d.server_folder_id AND m.uid=d.server_uid WHERE m.id=?1",
+                    "SELECT d.id FROM drafts d JOIN messages m
+                       ON (m.folder_id=d.server_folder_id AND m.uid=d.server_uid)
+                       OR (m.remote_id IS NOT NULL AND d.server_remote_id IS NOT NULL AND m.message_id=d.server_message_id)
+                     WHERE m.id=?1 LIMIT 1",
                     params![rid],
                     |r| r.get(0),
                 )
@@ -210,12 +235,17 @@ impl Engine {
             attachments,
             send_at: None,
         };
+        let server_remote = if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            self.api_draft_id_for_row(&acct, rid).await?
+        } else {
+            None
+        };
         let (json, lid, mid) = (serde_json::to_string(&d)?, local_id.clone(), h.message_id.clone());
         self.store()
             .call(move |c| {
                 c.execute(
-                    "INSERT INTO drafts(id, json, updated_at, server_folder_id, server_uid, server_message_id) VALUES (?1,?2,?3,?4,?5,?6)",
-                    params![lid, json, now_ms(), folder_id, uid as i64, mid],
+                    "INSERT INTO drafts(id, json, updated_at, server_folder_id, server_uid, server_message_id, server_remote_id) VALUES (?1,?2,?3,?4,?5,?6,?7)",
+                    params![lid, json, now_ms(), folder_id, uid as i64, mid, server_remote],
                 )?;
                 Ok(())
             })
@@ -225,6 +255,28 @@ impl Engine {
 
     /// Remove a draft's server copy (if any) and the local row.
     async fn discard_draft(&self, id: &str) -> Result<()> {
+        let id2 = id.to_string();
+        let api: Option<(String, Option<String>)> = self
+            .store()
+            .call(move |c| Ok(c.query_row("SELECT json, server_remote_id FROM drafts WHERE id=?1", params![id2], |r| Ok((r.get(0)?, r.get(1)?))).optional()?))
+            .await?;
+        if let Some((json, Some(remote))) = api {
+            let d: DraftInput = serde_json::from_str(&json)?;
+            let (acct, _) = self.identity(&d.identity_id).await?;
+            if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+                self.api_delete_draft(&acct, &remote).await?;
+                let (id3, dir) = (id.to_string(), self.inner.cfg.cache_dir.join("drafts").join(id));
+                self.store()
+                    .call(move |c| {
+                        c.execute("DELETE FROM drafts WHERE id=?1", params![id3])?;
+                        Ok(())
+                    })
+                    .await?;
+                let _ = tokio::fs::remove_dir_all(dir).await;
+                self.sync_now(Some(acct.id.clone())).await?;
+                return Ok(());
+            }
+        }
         let id2 = id.to_string();
         let row: Option<(Option<i64>, Option<i64>)> = self
             .store()
@@ -263,6 +315,16 @@ impl Engine {
         }
         let rid: i64 = id.parse().map_err(|_| ApiError::not_found("The draft"))?;
         let (fid, path, uid, aid) = self.store().call(move |c| msgstore::locate(c, rid)).await?;
+        let acct = self.account(&aid).await?;
+        if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            match self.api_draft_id_for_row(&acct, rid).await? {
+                Some(d) => self.api_delete_draft(&acct, &d).await?,
+                None => return Err(ApiError::not_found("The draft on the server (it may have been sent or deleted elsewhere)")),
+            }
+            self.store().call(move |c| msgstore::delete_row(c, rid)).await?;
+            self.emit("mail://changed", serde_json::json!({ "folderIds": self.account_folder_ids(&aid).await? }));
+            return Ok(());
+        }
         self.with_interactive(&aid, move |conn| {
             let path = path.clone();
             Box::pin(async move { conn.delete_uids(&path, &[uid]).await })
@@ -454,14 +516,24 @@ async fn send_one(engine: &Engine, draft: &DraftInput) -> std::result::Result<()
     let atts = engine.resolve_attachments(draft).await.map_err(permanent)?;
     let mid = smtp::new_message_id(&ident.email);
     let built = smtp::build_message(draft, &ident, &mid, &atts, now_ms(), true).map_err(permanent)?;
-    let secret = match engine.credential(&acct, "smtp").await.map_err(permanent)? {
-        crate::imap::conn::Credential::Password { pass, .. } => SmtpSecret::Password(pass),
-        crate::imap::conn::Credential::OAuth { token, .. } => SmtpSecret::OAuthToken(token),
-    };
-    smtp::send(&acct.smtp, &secret, &built).await.map_err(|f| (f.error, f.transient))?;
+    if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+        // Gmail messages.send / Graph sendMail take the whole MIME message; recipients come from its To/Cc/Bcc
+        // headers, so the copy that keeps Bcc is what is sent (Source: providers/gmail.rs, providers/graph.rs).
+        let reply_row = draft.reply_to_message_id.as_deref().and_then(|r| r.parse::<i64>().ok());
+        engine.api_send(&acct, &built.copy, reply_row).await.map_err(|e| {
+            let transient = matches!(e.kind, ErrorKind::Network);
+            (e, transient)
+        })?;
+    } else {
+        let secret = match engine.credential(&acct, "smtp").await.map_err(permanent)? {
+            crate::imap::conn::Credential::Password { pass, .. } => SmtpSecret::Password(pass),
+            crate::imap::conn::Credential::OAuth { token, .. } => SmtpSecret::OAuthToken(token),
+        };
+        smtp::send(&acct.smtp, &secret, &built).await.map_err(|f| (f.error, f.transient))?;
+    }
 
     // Sent. Everything below is bookkeeping; a failure here must not make the user resend.
-    if acct.provider == Provider::Imap {
+    if crate::providers::backend(&acct) == crate::providers::Backend::Imap && acct.provider == Provider::Imap {
         // Gmail and Microsoft 365 file submitted mail in Sent themselves; other servers need the APPEND.
         if let Ok((_, sent_path)) = role_folder(engine, &acct.id, FolderRole::Sent, "Sent").await {
             let raw = built.copy.clone();

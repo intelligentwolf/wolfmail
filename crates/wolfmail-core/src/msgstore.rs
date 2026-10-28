@@ -49,6 +49,8 @@ pub struct NewMessage<'a> {
     pub modseq: Option<u64>,
     pub gm_thrid: Option<u64>,
     pub gm_msgid: Option<u64>,
+    /// Provider thread id (Gmail API threadId / Graph conversationId), see threading::ThreadInput::ext_thread.
+    pub ext_thread: Option<String>,
 }
 
 /// Insert (or replace on (folder, uid)) a message row. Returns the rowid.
@@ -64,6 +66,7 @@ pub fn insert_message(conn: &Connection, m: &NewMessage<'_>) -> Result<i64> {
             subject: &m.header.subject,
             date,
             gm_thrid: m.gm_thrid,
+            ext_thread: m.ext_thread.as_deref(),
         },
     )?;
     let existing: Option<i64> = conn
@@ -249,6 +252,22 @@ pub fn get_summary(conn: &Connection, id: i64) -> Result<MessageSummary> {
         })
 }
 
+/// True when no Gmail label puts the message in Trash or Spam. Gmail keeps a trashed message's other labels, but
+/// it is hidden from them (and from All Mail) — Source: Gmail API labels guide, TRASH / SPAM are labels like any
+/// other. IMAP and Graph rows have no message_labels, so this is always true for them.
+pub const NOT_IN_TRASH_LABEL: &str = "NOT EXISTS (SELECT 1 FROM message_labels xl JOIN folders xf ON xf.id = xl.folder_id
+    WHERE xl.message_rowid = m.id AND xf.role IN ('trash','junk'))";
+
+/// Membership in any folder whose role is NOT in `excluded` (an SQL list of quoted roles), counting both the row's
+/// own folder and its Gmail label folders.
+fn member_of_roles_excluding(excluded: &str) -> String {
+    format!(
+        "(m.folder_id IN (SELECT id FROM folders WHERE COALESCE(role,'') NOT IN ({excluded}))
+          OR m.id IN (SELECT ml.message_rowid FROM message_labels ml JOIN folders f ON f.id = ml.folder_id
+                      WHERE COALESCE(f.role,'') NOT IN ({excluded})))"
+    )
+}
+
 /// Build the WHERE clause for a view (folder or unified role) plus filters. Returns (sql, params).
 pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)> {
     use rusqlite::types::Value as V;
@@ -257,19 +276,25 @@ pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)
     match (&q.folder_id, &q.unified) {
         (Some(fid), _) => {
             let fid: i64 = fid.parse().map_err(|_| ApiError::invalid("folderId", "Unknown folder."))?;
-            clauses.push("m.folder_id = ?".into());
+            // A Gmail-API message belongs to label folders through message_labels (one row per message).
+            clauses.push("(m.folder_id = ? OR m.id IN (SELECT message_rowid FROM message_labels WHERE folder_id = ?))".into());
+            ps.push(V::Integer(fid));
+            ps.push(V::Integer(fid));
+            clauses.push(format!("((SELECT COALESCE(role,'') FROM folders WHERE id = ?) IN ('trash','junk') OR {NOT_IN_TRASH_LABEL})"));
             ps.push(V::Integer(fid));
         }
         (None, Some(u)) => {
             let enabled = "m.account_id IN (SELECT id FROM accounts WHERE enabled=1)";
             clauses.push(enabled.into());
             match u {
-                UnifiedView::Flagged => clauses.push(
-                    "m.flagged=1 AND m.folder_id IN (SELECT id FROM folders WHERE COALESCE(role,'') NOT IN ('trash','junk','all','flagged'))".into(),
-                ),
-                UnifiedView::Unread => clauses.push(
-                    "m.seen=0 AND m.folder_id IN (SELECT id FROM folders WHERE COALESCE(role,'') NOT IN ('trash','junk','all','sent','drafts','flagged'))".into(),
-                ),
+                UnifiedView::Flagged => clauses.push(format!(
+                    "m.flagged=1 AND {} AND {NOT_IN_TRASH_LABEL}",
+                    member_of_roles_excluding("'trash','junk','all','flagged'")
+                )),
+                UnifiedView::Unread => clauses.push(format!(
+                    "m.seen=0 AND {} AND {NOT_IN_TRASH_LABEL}",
+                    member_of_roles_excluding("'trash','junk','all','sent','drafts','flagged'")
+                )),
                 other => {
                     let role = match other {
                         UnifiedView::Inbox => "inbox",
@@ -280,8 +305,16 @@ pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)
                         UnifiedView::Archive => "archive",
                         _ => unreachable!("handled above"),
                     };
-                    clauses.push("m.folder_id IN (SELECT id FROM folders WHERE role = ?)".into());
+                    clauses.push(
+                        "(m.folder_id IN (SELECT id FROM folders WHERE role = ?)
+                          OR m.id IN (SELECT ml.message_rowid FROM message_labels ml JOIN folders f ON f.id = ml.folder_id WHERE f.role = ?))"
+                            .into(),
+                    );
                     ps.push(V::Text(role.into()));
+                    ps.push(V::Text(role.into()));
+                    if role != "trash" && role != "junk" {
+                        clauses.push(NOT_IN_TRASH_LABEL.into());
+                    }
                 }
             }
         }
@@ -368,7 +401,7 @@ pub fn thread_messages(conn: &Connection, account_id: &str, thread_id: &str) -> 
     // holds a second copy of everything — Betterbird patch 28 fixes the same duplication in its search).
     let mut stmt = conn.prepare(&format!(
         "SELECT {SUMMARY_COLS}, COALESCE(f.role,'') AS role FROM messages m JOIN folders f ON f.id = m.folder_id
-         WHERE m.account_id=?1 AND m.thread_id=?2 AND COALESCE(f.role,'') NOT IN ('trash','junk')
+         WHERE m.account_id=?1 AND m.thread_id=?2 AND COALESCE(f.role,'') NOT IN ('trash','junk') AND {NOT_IN_TRASH_LABEL}
          ORDER BY m.date ASC, m.id ASC"
     ))?;
     let rows = stmt
@@ -483,6 +516,7 @@ mod tests {
                 modseq: None,
                 gm_thrid: None,
                 gm_msgid: None,
+                ext_thread: None,
             };
             insert_message(c, &mk(1, hdr("r@x", None, "Plan", 1000), true))?;
             insert_message(c, &mk(2, hdr("c@x", Some("r@x"), "Re: Plan", 2000), false))?;

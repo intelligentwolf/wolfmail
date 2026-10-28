@@ -42,6 +42,37 @@ drag-drop move, context menus, tags, quick-filter chips, command palette search,
 send-later, attachment reminder, light theme, table layout, bottom/off reading pane, notifications, tray.
 OAuth (no client ids), TLS ports 993/465/STARTTLS against real servers, real providers, IW routes (mock only).
 
+## Phase 8 (mail part) — Gmail API + Microsoft Graph (2026-10-28, branch `feat/provider-apis`)
+Google/Microsoft OAuth accounts now sync and send through the Gmail API / Graph with the scopes IntelligentWolf's
+apps already hold (no `mail.google.com`, no IMAP/SMTP scopes). `crates/wolfmail-core/src/providers/` +
+`engine/apiops.rs`; behaviour in `docs/API.md` → "Providers". Verified: 46 unit tests, `tests/providers_mock.rs`
+(3 tests: full Gmail and Graph accounts through the real runner/commands against a local wiremock, plus
+Retry-After), the GreenMail IMAP round trip still green, clippy -D warnings clean.
+NOT exercised: real Google/Microsoft sign-in and APIs (no client ids; mocks only).
+Known limits: Gmail can't purge Trash (scope); moving mail INTO a Microsoft 365 account is refused (Graph files MIME
+as drafts); Gmail "Move to label" removes Inbox only (Gmail's semantics; the source label is not known from ids);
+30 s polling instead of push (needs a server).
+
+### Console steps for Paul (same apps as IntelligentWolf)
+Google — the Cloud project that holds IW's OAuth client (`GOOGLE_CLIENT_ID` in IW's .env):
+1. Google Auth Platform → Clients → Create client → Application type **Desktop app**, name "WolfMail"
+   (Source: developers.google.com/identity/protocols/oauth2/native-app). It uses the loopback redirect
+   `http://127.0.0.1:<port>`; WolfMail picks the port.
+2. Copy its client ID and client secret into GitHub secrets `WOLFMAIL_GOOGLE_CLIENT_ID` and
+   `WOLFMAIL_GOOGLE_CLIENT_SECRET` (Google: desktop apps are public clients, the secret is not confidential).
+3. Scopes requested: gmail.modify, gmail.send, gmail.settings.basic, openid, email — all already on IW's consent
+   screen (php-api/lib/gmail.php:28-50). Ask Google to confirm the existing restricted-scope verification covers the
+   new Desktop client in the same project.
+Microsoft — IW's Entra app (`MS_CLIENT_ID`), Microsoft Entra admin center → App registrations → that app:
+1. Authentication → Add a platform → **Mobile and desktop applications** → custom redirect URI `http://localhost`
+   (Source: learn.microsoft.com v2-oauth2-auth-code-flow — desktop apps using the system browser use
+   `http://localhost`; reply-url doc — the port is ignored for localhost).
+2. Authentication → Advanced settings → **Allow public client flows: Yes** (reply-url doc: an app with these redirect
+   URIs "need[s] to enable a public client flow configuration"). WolfMail sends no client secret.
+3. API permissions (Microsoft Graph, delegated): Mail.ReadWrite, Mail.Send, User.Read, offline_access, openid,
+   profile, email — IW's MS_SCOPES already has them (php-api/lib/microsoft.php:20-29).
+4. GitHub secret `WOLFMAIL_MS_CLIENT_ID` = the same Application (client) ID.
+
 ## Phases
 - [x] 0 Repo, Tauri skeleton, design system, contract
 - [x] 1 Engine core (storage, IMAP sync, folders, flags, move) — see limits below
@@ -51,7 +82,7 @@ OAuth (no client ids), TLS ports 993/465/STARTTLS against real servers, real pro
 - [~] 5 Unified views, search, palette, tags, shortcuts, tray, notifications — written; partly exercised
 - [~] 6 IntelligentWolf client side done; server routes NOT built (needs Paul's go-ahead)
 - [ ] 7 Calendar (CalDAV/Google — Paul uses 6 calendars) + contacts (CardDAV)
-- [ ] 8 Gmail API + Microsoft Graph adapters, message filters, snooze
+- [~] 8 Gmail API + Microsoft Graph adapters DONE (merged; mock-tested only, no real OAuth yet); filters, snooze open
 - [~] 9 Packaging: CI built all four platforms (run 40677185061; upload naming fixed after); Flatpak manifest + CI
       job; signed updater wired (key generated, needs the repo secrets + release hosting decision above)
 - [x] 10 Linux without a Secret Service daemon: encrypted vault (Argon2id + XChaCha20-Poly1305) + primary password;

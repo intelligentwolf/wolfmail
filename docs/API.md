@@ -216,3 +216,34 @@ dir: Argon2id-derived key, XChaCha20-Poly1305, primary password (see `crates/wol
   (`account_update` with `password`) or signs in again (`oauth_authorize`) — repeated bad logins lock accounts.
 - OAuth needs build-time `WOLFMAIL_GOOGLE_CLIENT_ID` (+ `WOLFMAIL_GOOGLE_CLIENT_SECRET` for Google "Desktop app"
   credentials) / `WOLFMAIL_MS_CLIENT_ID`; without them `oauth_authorize` fails with kind `oauthConfig`.
+
+### Providers (Gmail API / Microsoft Graph)
+
+- An account signed in with Google (`auth: oauthGoogle`) syncs and sends through the **Gmail API**; one signed in
+  with Microsoft (`oauthMicrosoft`) through **Microsoft Graph**. Password accounts — including Gmail/Outlook with an
+  app password — stay on IMAP/SMTP. Reason: WolfMail uses the same OAuth apps as IntelligentWolf, which are approved
+  for `gmail.modify`/`gmail.send`/`gmail.settings.basic` and Graph `Mail.ReadWrite`/`Mail.Send`/`User.Read`, not for
+  IMAP/SMTP (`https://mail.google.com/`, `IMAP.AccessAsUser.All`). Contract types are unchanged.
+- `account_test` for an OAuth config makes one authenticated API call (Gmail `users.getProfile`, Graph
+  `GET /me/mailFolders/inbox`); `imapOk`/`smtpOk` both report it.
+- **Gmail folders are labels.** Inbox, Sent, Drafts, Trash, Spam (role `junk`) and Starred (role `flagged`) are the
+  system labels; user labels are folders nested by `/`; "All Mail" (role `all`) is every message. A message is ONE
+  row that appears in each of its label folders — `folderId` on a summary is always the account's All Mail folder.
+  Trash/Spam membership hides a message from its other labels, All Mail and the unified views (as Gmail does).
+  Archive removes the Inbox label; Move to a label adds it and removes Inbox; Copy adds the label; Junk adds Spam and
+  removes Inbox. Tags are user labels with the tag's name (created when missing). Answered/forwarded stay local.
+- **Gmail can't erase mail from Trash**: permanent deletion needs `https://mail.google.com/`, which these OAuth apps
+  are not approved for. `messages_trash` on a message already in Trash returns `invalid` with the explanation (Gmail
+  empties Trash itself after 30 days).
+- **Graph:** folders are the mailbox's mail folders (search folders are skipped); roles come from the well-known
+  names (inbox, sentitems, drafts, deleteditems, junkemail, archive, outbox). Archive moves to `archive`; Trash moves
+  to `deleteditems`, and from there `permanentDelete`s. Tags are Outlook categories (unknown categories become tags).
+  Ids are immutable (`Prefer: IdType="ImmutableId"`), so a moved message keeps its id.
+- Moving/copying messages INTO a Microsoft 365 account from another account is refused (`invalid`): Graph can only
+  create MIME messages as drafts. Into Gmail it works (`messages.insert`).
+- Sync: Gmail = `history.list` since the stored history id (404 → full relisting) plus a paged full listing on first
+  sync; Graph = per-folder delta rounds (410 → new round). Rows a completed full listing did not see are removed.
+  Both poll every 30 s while WolfMail runs and immediately on `sync_now` — push needs a server (Gmail Pub/Sub, Graph
+  webhooks) and WolfMail has none. Bodies for the last `bodyDays` are prefetched (50 per pass).
+- Throttling: 429/503 (and Gmail's 403 rate-limit reasons) are retried up to 4 times, honouring `Retry-After`, else
+  the account goes `offline` and retries with backoff.
