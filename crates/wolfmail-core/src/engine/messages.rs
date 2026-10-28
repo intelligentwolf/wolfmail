@@ -110,13 +110,19 @@ impl Engine {
         let rid: i64 = id.parse().map_err(|_| ApiError::not_found("The message"))?;
         let raw = self.raw_bytes(rid).await?;
         let allow = self.allow_remote_for(rid).await?;
-        self.store().call(move |c| msgstore::assemble_full(c, rid, &raw, allow)).await
+        let raw2 = raw.clone();
+        let mut full = self.store().call(move |c| msgstore::assemble_full(c, rid, &raw2, allow)).await?;
+        full.invite = crate::pim::itip::invite_for(self, &raw).await;
+        Ok(full)
     }
 
     pub async fn message_load_remote(&self, id: String) -> Result<MessageFull> {
         let rid: i64 = id.parse().map_err(|_| ApiError::not_found("The message"))?;
         let raw = self.raw_bytes(rid).await?;
-        self.store().call(move |c| msgstore::assemble_full(c, rid, &raw, true)).await
+        let raw2 = raw.clone();
+        let mut full = self.store().call(move |c| msgstore::assemble_full(c, rid, &raw2, true)).await?;
+        full.invite = crate::pim::itip::invite_for(self, &raw).await;
+        Ok(full)
     }
 
     pub async fn message_raw(&self, id: String) -> Result<String> {
@@ -684,7 +690,9 @@ impl Engine {
             return Ok(Vec::new());
         }
         let limit = limit.clamp(1, 50);
-        self.store()
+        let prefix_for_book = p.clone();
+        let seen = self
+            .store()
             .call(move |c| {
                 let like = format!("{}%", p.replace('%', "\\%").replace('_', "\\_"));
                 let any = format!("%{}%", p.replace('%', "\\%").replace('_', "\\_"));
@@ -698,7 +706,9 @@ impl Engine {
                     .collect::<rusqlite::Result<Vec<_>>>()?;
                 Ok(v)
             })
-            .await
+            .await?;
+        // Address-book contacts (calendar & contacts) are blended in: pim/commands.rs pim_suggest_merge.
+        Ok(self.pim_suggest_merge(seen, &prefix_for_book, limit).await)
     }
 
     pub async fn unsubscribe(&self, message_id: String) -> Result<String> {
@@ -756,6 +766,7 @@ impl Engine {
                 forward_of_message_id: None,
                 attachments: vec![],
                 send_at: Some(now_ms()),
+                calendar: None,
             };
             self.send(draft).await?;
             return Ok("mailto".into());

@@ -93,6 +93,7 @@ fn draft(identity: &str, to: &str, subject: &str) -> DraftInput {
         forward_of_message_id: None,
         attachments: vec![],
         send_at: None,
+        calendar: None,
     }
 }
 

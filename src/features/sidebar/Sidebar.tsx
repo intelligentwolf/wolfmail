@@ -15,6 +15,7 @@ import { Ctx, Spinner } from "../../components/ui/misc";
 import { Dialog, ConfirmDialog } from "../../components/ui/dialog";
 import { Input, Field } from "../../components/ui/form";
 import { newDraftFor } from "../compose/drafts";
+import { ModeSwitch } from "../pim/ModeSwitch";
 
 const roleIcon: Record<NonNullable<FolderRole>, React.ComponentType<{ className?: string }>> = {
   inbox: Inbox, sent: Send, drafts: FileText, trash: Trash2, junk: ShieldAlert, archive: Archive, all: Mails, flagged: Star, outbox: Upload,
@@ -66,6 +67,7 @@ export function Sidebar() {
           <RefreshCw className={cn((syncing || anySyncing) && "wm-spin")} />
         </IconButton>
       </div>
+      <ModeSwitch />
 
       <div className="px-3 pb-3">
         <Button

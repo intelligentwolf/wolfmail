@@ -220,23 +220,32 @@ pub struct Store {
 
 impl Store {
     pub fn open(path: &Path) -> Result<Self> {
+        Self::open_with(path, MIGRATIONS)
+    }
+
+    pub fn open_in_memory() -> Result<Self> {
+        Self::init(Connection::open_in_memory()?, MIGRATIONS)
+    }
+
+    /// A store with its own migration list (calendar & contacts live in a separate file: pim/store.rs).
+    pub fn open_with(path: &Path, migrations: &[&str]) -> Result<Self> {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
         let conn = Connection::open(path)?;
-        Self::init(conn)
+        Self::init(conn, migrations)
     }
 
-    pub fn open_in_memory() -> Result<Self> {
-        Self::init(Connection::open_in_memory()?)
+    pub fn open_in_memory_with(migrations: &[&str]) -> Result<Self> {
+        Self::init(Connection::open_in_memory()?, migrations)
     }
 
-    fn init(conn: Connection) -> Result<Self> {
+    fn init(conn: Connection, migrations: &[&str]) -> Result<Self> {
         conn.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
         )?;
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        for (i, sql) in MIGRATIONS.iter().enumerate() {
+        for (i, sql) in migrations.iter().enumerate() {
             let v = i as i64 + 1;
             if v > version {
                 conn.execute_batch(&format!("BEGIN; {sql} PRAGMA user_version={v}; COMMIT;"))

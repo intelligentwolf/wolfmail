@@ -234,6 +234,7 @@ impl Engine {
             forward_of_message_id: None,
             attachments,
             send_at: None,
+            calendar: None,
         };
         let server_remote = if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
             self.api_draft_id_for_row(&acct, rid).await?

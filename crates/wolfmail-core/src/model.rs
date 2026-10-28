@@ -301,6 +301,9 @@ pub struct MessageFull {
     pub list_unsubscribe: Option<ListUnsubscribe>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auth_results: Option<AuthResults>,
+    /// Calendar invitation carried by this message (pim/itip.rs), filled in by message_get.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invite: Option<crate::pim::model::Invite>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -410,6 +413,17 @@ pub struct DraftInput {
     pub attachments: Vec<DraftAttachment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub send_at: Option<i64>,
+    /// iMIP part (RFC 6047): an invitation reply/request sent as text/calendar;method=… (calendar invites).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar: Option<CalendarPart>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CalendarPart {
+    /// iTIP METHOD: "REPLY", "REQUEST", "CANCEL" …
+    pub method: String,
+    pub ics: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

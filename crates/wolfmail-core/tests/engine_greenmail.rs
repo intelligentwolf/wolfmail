@@ -107,7 +107,7 @@ async fn engine_round_trip() {
         reply_to_message_id: None,
         forward_of_message_id: None,
         attachments: vec![DraftAttachment { path: Some(att.to_string_lossy().to_string()), from_message: None }],
-        send_at: None,
+        send_at: None, calendar: None,
     };
     let item = engine.send(draft.clone()).await.unwrap();
     let (e2, id) = (engine.clone(), item.id.clone());

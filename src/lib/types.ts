@@ -49,6 +49,8 @@ export type MessageFull = MessageSummary & {
   attachments: Attachment[];
   listUnsubscribe?: { mailto?: string; http?: string; oneClick: boolean };
   authResults?: { spf?: string; dkim?: string; dmarc?: string };
+  /** Calendar invitation carried by the message (pimTypes.ts Invite). */
+  invite?: import("./pimTypes").Invite;
 };
 
 export type UnifiedView = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "flagged" | "unread";

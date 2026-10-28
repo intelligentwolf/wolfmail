@@ -153,6 +153,11 @@ const FAIL_PAGE: &str = "<!doctype html><meta charset=utf-8><title>WolfMail</tit
 
 /// The authorization request (system browser). Public client: PKCE S256, no secret anywhere in it.
 pub fn auth_url(provider: OAuthProvider, client_id: &str, redirect: &str, state: &str, challenge: &str, email: &str) -> Result<url::Url> {
+    auth_url_scoped(provider, client_id, redirect, state, challenge, email, cfg(provider).scopes)
+}
+
+/// `auth_url` with an explicit scope set (calendar & contacts use their own: `pim_scopes`).
+pub fn auth_url_scoped(provider: OAuthProvider, client_id: &str, redirect: &str, state: &str, challenge: &str, email: &str, scopes: &str) -> Result<url::Url> {
     let c = cfg(provider);
     let mut auth = url::Url::parse(c.auth_url).map_err(|e| ApiError::internal(e.to_string()))?;
     {
@@ -160,7 +165,7 @@ pub fn auth_url(provider: OAuthProvider, client_id: &str, redirect: &str, state:
         q.append_pair("client_id", client_id)
             .append_pair("response_type", "code")
             .append_pair("redirect_uri", redirect)
-            .append_pair("scope", c.scopes)
+            .append_pair("scope", scopes)
             .append_pair("state", state)
             .append_pair("code_challenge", challenge)
             .append_pair("code_challenge_method", "S256")
@@ -183,6 +188,41 @@ pub async fn authorize(
     email: &str,
     open_browser: &(dyn Fn(&str) -> Result<()> + Send + Sync),
 ) -> Result<String> {
+    authorize_scoped(http, secrets, provider, email, cfg(provider).scopes, &oauth_key(email), open_browser).await
+}
+
+/// Calendar & contacts sign-in (pim/): the same apps and flow as mail, a different scope set, and a separate
+/// keychain entry so mail and calendar grants can be revoked independently.
+/// Google: Calendar API v3 `auth/calendar` + People API `contacts.readonly` / `contacts.other.readonly` (Google
+/// "OAuth 2.0 Scopes for Google APIs": Calendar API v3, People API v1) — the scopes IntelligentWolf's Google app
+/// already uses (../intelligentwolf/php-api/lib/google_calendar.php:46-47, lib/gmail.php:28-50).
+/// Microsoft: Graph `Calendars.ReadWrite` (calendarView + event CRUD, Graph "List calendarView" permissions table)
+/// and `Contacts.ReadWrite` (Graph contact resource) — the latter must be added to the Entra app.
+pub const PIM_GOOGLE_SCOPES: &str =
+    "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly openid email";
+pub const PIM_MS_SCOPES: &str =
+    "https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/Contacts.ReadWrite offline_access openid email";
+
+pub fn pim_key(email: &str) -> String {
+    format!("oauth-pim:{}", email.to_ascii_lowercase())
+}
+
+pub fn pim_scopes(p: OAuthProvider) -> &'static str {
+    match p {
+        OAuthProvider::Google => PIM_GOOGLE_SCOPES,
+        OAuthProvider::Microsoft => PIM_MS_SCOPES,
+    }
+}
+
+pub async fn authorize_scoped(
+    http: &reqwest::Client,
+    secrets: &dyn SecretStore,
+    provider: OAuthProvider,
+    email: &str,
+    scopes: &str,
+    key: &str,
+    open_browser: &(dyn Fn(&str) -> Result<()> + Send + Sync),
+) -> Result<String> {
     let c = cfg(provider);
     let client_id = c.client_id.filter(|s| !s.is_empty()).ok_or_else(|| not_configured(provider))?;
     let listener = TcpListener::bind(("127.0.0.1", 0)).await?;
@@ -196,7 +236,7 @@ pub async fn authorize(
     let listener6 = if provider == OAuthProvider::Microsoft { TcpListener::bind(("::1", port)).await.ok() } else { None };
     let (verifier, challenge) = pkce_pair();
     let state = random_state();
-    let auth = auth_url(provider, client_id, &redirect, &state, &challenge, email)?;
+    let auth = auth_url_scoped(provider, client_id, &redirect, &state, &challenge, email, scopes)?;
     open_browser(auth.as_str())?;
 
     let wait = async {
@@ -276,7 +316,7 @@ pub async fn authorize(
         access_token: tok.access_token,
         expires_at: crate::db::now_ms() + tok.expires_in.unwrap_or(3600) * 1000,
     };
-    secrets.set(&oauth_key(email), &serde_json::to_string(&stored)?)?;
+    secrets.set(key, &serde_json::to_string(&stored)?)?;
     Ok(signed_in.unwrap_or_else(|| email.to_ascii_lowercase()))
 }
 
@@ -302,7 +342,18 @@ pub fn save_token(secrets: &dyn SecretStore, email: &str, provider: OAuthProvide
 
 /// A valid access token for `email`, refreshing it when it expires within a minute.
 pub async fn access_token(http: &reqwest::Client, secrets: &dyn SecretStore, email: &str) -> Result<String> {
-    let key = oauth_key(email);
+    access_token_scoped(http, secrets, &oauth_key(email), &|p| cfg(p).scopes).await
+}
+
+/// Like `access_token`, for a token stored under `key` (see `pim_key`); `scopes_for` gives the scope set sent on a
+/// Microsoft refresh (Microsoft requires it; Google ignores it).
+pub async fn access_token_scoped(
+    http: &reqwest::Client,
+    secrets: &dyn SecretStore,
+    key: &str,
+    scopes_for: &(dyn Fn(OAuthProvider) -> &'static str + Send + Sync),
+) -> Result<String> {
+    let key = key.to_string();
     let raw = secrets.get(&key)?.ok_or_else(|| ApiError::auth("This account needs to be signed in again."))?;
     let mut st: StoredToken = serde_json::from_str(&raw)?;
     if st.expires_at - 60_000 > crate::db::now_ms() && !st.access_token.is_empty() {
@@ -316,7 +367,7 @@ pub async fn access_token(http: &reqwest::Client, secrets: &dyn SecretStore, ema
         ("grant_type", "refresh_token".to_string()),
     ];
     if st.provider == OAuthProvider::Microsoft {
-        form.push(("scope", c.scopes.to_string()));
+        form.push(("scope", scopes_for(st.provider).to_string()));
     }
     if let Some(s) = c.client_secret.filter(|s| !s.is_empty()) {
         form.push(("client_secret", s.to_string()));

@@ -72,6 +72,8 @@ pub(crate) struct Inner {
     pub api_bases: crate::providers::ApiBases,
     /// Wakes the snooze task when a new snooze may be due sooner than it planned (rules.rs).
     pub snooze_wake: Notify,
+    /// Calendar & contacts (own store file + loops): crate::pim.
+    pub pim: crate::pim::Pim,
 }
 
 #[derive(Clone)]
@@ -96,6 +98,7 @@ impl Engine {
     ) -> Result<Engine> {
         crate::tls::install_crypto_provider();
         let store = Store::open(&cfg.data_dir.join("wolfmail.sqlite3"))?;
+        let pim = crate::pim::Pim::open(&cfg.data_dir)?;
         let http = reqwest::Client::builder()
             .user_agent(format!("WolfMail/{}", cfg.app_version))
             .timeout(std::time::Duration::from_secs(60))
@@ -115,6 +118,7 @@ impl Engine {
                 outbox_wake: Notify::new(),
                 api_bases,
                 snooze_wake: Notify::new(),
+                pim,
             }),
         };
         compose::recover_outbox(&engine).await?;
@@ -125,6 +129,7 @@ impl Engine {
         }
         compose::spawn_outbox_worker(engine.clone());
         engine.spawn_snoozer();
+        engine.pim_start_background();
         Ok(engine)
     }
 

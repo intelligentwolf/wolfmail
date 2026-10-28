@@ -479,6 +479,7 @@ pub fn assemble_full(conn: &Connection, id: i64, raw: &[u8], allow_remote: bool)
         attachments: parsed.attachments.into_iter().filter(|a| !a.inline).collect(),
         list_unsubscribe: lu.and_then(|s| serde_json::from_str(&s).ok()),
         auth_results: auth.and_then(|s| serde_json::from_str(&s).ok()),
+        invite: None,
     })
 }
 
