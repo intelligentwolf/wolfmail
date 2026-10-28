@@ -9,6 +9,7 @@ import { boot, getState, isOverviewWindow, openComposer, useStore } from "./lib/
 import { Overview } from "./features/overview/Overview";
 import { VaultGate } from "./features/onboarding/VaultGate";
 import { dailyUpdateCheck } from "./lib/updates";
+import { modalOpen } from "./lib/dom";
 import { events } from "./lib/api";
 import { Toaster, notify } from "./lib/notify";
 import { displayName, parseAddresses } from "./lib/utils";
@@ -100,7 +101,7 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
   React.useEffect(() => {
     if (!maxReader) return;
     const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !document.querySelector('[role="dialog"][aria-modal="true"]')) setMaxReader(false);
+      if (e.key === "Escape" && !modalOpen()) setMaxReader(false);
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);

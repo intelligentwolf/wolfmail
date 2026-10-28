@@ -62,7 +62,7 @@ export function CommandPalette() {
     <D.Root open={open} onOpenChange={(o) => setUi({ palette: o })}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/35 backdrop-blur-[2px]" />
-        <D.Content className="fixed left-1/2 top-[12vh] z-50 w-[min(680px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-card bg-popover shadow-[var(--shadow-pop)] ring-1 ring-border">
+        <D.Content aria-modal="true" className="fixed left-1/2 top-[12vh] z-50 w-[min(680px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-card bg-popover shadow-[var(--shadow-pop)] ring-1 ring-border">
           <D.Title className="sr-only">{mode === "move" ? "Move to folder" : "Command palette"}</D.Title>
           <D.Description className="sr-only">Search mail, folders and commands. Use the arrow keys and Enter.</D.Description>
           <Command label="Command palette" shouldFilter={true} loop>

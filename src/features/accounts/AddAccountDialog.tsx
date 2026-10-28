@@ -1,4 +1,5 @@
 import * as React from "react";
+import { secretsPlace } from "../../lib/features";
 import { ArrowLeft, Building2, CheckCircle2, ChevronRight, KeyRound, Lock, Mail, Server, ShieldCheck } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
@@ -23,6 +24,7 @@ const noErrors: Errors = { imap: {}, smtp: {} };
 const providerLabel: Record<Provider, string> = { imap: "IMAP mail server", gmail: "Google (Gmail / Workspace)", outlook: "Microsoft (Outlook / Microsoft 365)" };
 
 export function AddAccountDialog() {
+  const secretsBackend = useStore((s) => s.secrets?.backend);
   const open = useStore((s) => s.ui.addAccount);
   const accounts = useStore((s) => s.accounts);
   const iwConnected = useStore((s) => !!s.iw?.connected);
@@ -321,7 +323,7 @@ export function AddAccountDialog() {
             </div>
           ) : (
             <Field id="acct-password" label={provider === "imap" ? "Password" : "App password"} error={errors.password}
-              hint={provider === "imap" ? "Stored in your system keychain, never in WolfMail's files." : "Create one in your account's security settings. It is stored in your system keychain."}>
+              hint={provider === "imap" ? `Stored in ${secretsPlace(secretsBackend)}, never in WolfMail's settings files.` : "Create one in your account's security settings. It is stored in your system keychain."}>
               <Input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
             </Field>
           )}

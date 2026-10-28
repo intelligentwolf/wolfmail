@@ -96,3 +96,35 @@ jobs:
           args: ${{ matrix.args }}
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: "wolfmail-${{ matrix.name }}"
+
+  # Flatpak from the Linux .deb (packaging/flatpak/, Tauri "prebuilt .deb" recipe). Pins:
+  #   actions/download-artifact v8.0.2 9000827ccba6bdab643e8b6fd33ac0654aef8333
+  #   actions/upload-artifact   v7.0.2 cf430e030ddbb5b0abf93d22962f4752f3646cd9
+  flatpak:
+    needs: bundle
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: "wolfmail-linux-x86_64*"
+          path: linux-bundle
+      - name: Pick the .deb
+        run: |
+          deb=$(find linux-bundle -name '*.deb' | head -1)
+          test -n "$deb" || { echo "no .deb in the Linux bundle artifact"; find linux-bundle; exit 1; }
+          cp "$deb" packaging/flatpak/wolfmail.deb
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+      - name: Build Flatpak bundle
+        run: |
+          cd packaging/flatpak
+          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=repo build-dir uk.co.intelligentwolf.wolfmail.yml
+          flatpak build-bundle repo WolfMail.flatpak uk.co.intelligentwolf.wolfmail
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: wolfmail-linux-flatpak
+          path: packaging/flatpak/WolfMail.flatpak

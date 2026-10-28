@@ -1,0 +1,42 @@
+# Flatpak for WolfMail. Follows Tauri's "prebuilt .deb" recipe (tauri-docs distribute/flatpak.mdx): the .deb from
+# the Linux CI bundle is unpacked into /app. CI copies it next to this file as wolfmail.deb.
+# Runtime: GNOME 50 (Flathub offered 49/50/51 on 2026-10-28; 50 is the newest that isn't brand new). The GNOME
+# runtime ships webkit2gtk-4.1, which Tauri 2 needs.
+id: uk.co.intelligentwolf.wolfmail
+runtime: org.gnome.Platform
+runtime-version: '50'
+sdk: org.gnome.Sdk
+command: wolfmail
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=ipc
+  - --share=network                                  # IMAP/SMTP/HTTPS
+  - --talk-name=org.freedesktop.secrets              # system keychain (Secret Service)
+  - --talk-name=org.freedesktop.Notifications        # new-mail notifications
+  - --talk-name=org.kde.StatusNotifierWatcher        # tray icon
+  - --filesystem=xdg-run/tray-icon:create            # tray icon image (Tauri flatpak guide)
+  - --filesystem=xdg-download                        # "Save attachment" default folder
+  # Read-only access so "Import from Thunderbird/Betterbird" can find existing profiles (never written to).
+  - --filesystem=~/.thunderbird:ro
+  - --filesystem=~/.betterbird:ro
+  - --filesystem=~/.var/app/eu.betterbird.Betterbird/.thunderbird:ro
+  - --filesystem=~/.var/app/org.mozilla.Thunderbird/.thunderbird:ro
+modules:
+  - name: wolfmail
+    buildsystem: simple
+    sources:
+      - type: file
+        path: wolfmail.deb
+      - type: file
+        path: uk.co.intelligentwolf.wolfmail.metainfo.xml
+    build-commands:
+      - set -e
+      - mkdir deb-extract
+      - ar -x wolfmail.deb --output deb-extract
+      - tar -C deb-extract -xf deb-extract/data.tar.gz
+      - install -Dm755 deb-extract/usr/bin/wolfmail /app/bin/wolfmail
+      - DESKTOP=$(ls deb-extract/usr/share/applications/*.desktop | head -1); sed -i 's/^Icon=.*/Icon=uk.co.intelligentwolf.wolfmail/' "$DESKTOP"; install -Dm644 "$DESKTOP" /app/share/applications/uk.co.intelligentwolf.wolfmail.desktop
+      - for s in 32x32 128x128 256x256@2; do f=deb-extract/usr/share/icons/hicolor/$s/apps/wolfmail.png; [ -f "$f" ] && install -Dm644 "$f" /app/share/icons/hicolor/$s/apps/uk.co.intelligentwolf.wolfmail.png; done
+      - install -Dm644 uk.co.intelligentwolf.wolfmail.metainfo.xml /app/share/metainfo/uk.co.intelligentwolf.wolfmail.metainfo.xml

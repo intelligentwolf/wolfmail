@@ -53,7 +53,7 @@ export function SettingsDialog() {
     <D.Root open={open} onOpenChange={(o) => !o && setUi({ settings: false })}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px]" />
-        <D.Content className="fixed left-1/2 top-1/2 z-50 flex h-[min(720px,calc(100vh-48px))] w-[min(980px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-card bg-popover text-foreground shadow-[var(--shadow-pop)] ring-1 ring-border focus:outline-none">
+        <D.Content aria-modal="true" className="fixed left-1/2 top-1/2 z-50 flex h-[min(720px,calc(100vh-48px))] w-[min(980px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-card bg-popover text-foreground shadow-[var(--shadow-pop)] ring-1 ring-border focus:outline-none">
           <nav aria-label="Settings sections" className="flex w-60 shrink-0 flex-col border-r border-border bg-surface-inset">
             <D.Title className="px-5 pb-2 pt-5 font-title text-xl">Settings</D.Title>
             <D.Description className="sr-only">WolfMail settings</D.Description>
