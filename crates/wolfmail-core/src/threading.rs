@@ -20,6 +20,9 @@ pub struct ThreadInput<'a> {
     pub subject: &'a str,
     pub date: i64,
     pub gm_thrid: Option<u64>,
+    /// Thread id assigned by an API provider (Gmail `threadId` → "gt:…", Graph `conversationId` → "gc:…").
+    /// Like X-GM-THRID it is authoritative for that account.
+    pub ext_thread: Option<&'a str>,
 }
 
 pub fn assign_thread(conn: &Connection, t: &ThreadInput<'_>) -> Result<String> {
@@ -32,6 +35,11 @@ pub fn assign_thread(conn: &Connection, t: &ThreadInput<'_>) -> Result<String> {
     let has_refs = !ids.is_empty();
     if let Some(mid) = t.message_id {
         ids.push(mid.to_string());
+    }
+
+    if let Some(tid) = t.ext_thread.filter(|s| !s.is_empty()) {
+        register(conn, t.account_id, &ids, tid)?;
+        return Ok(tid.to_string());
     }
 
     if let Some(thrid) = t.gm_thrid {
@@ -97,7 +105,7 @@ mod tests {
     use crate::db::Store;
 
     fn input<'a>(mid: &'a str, irt: Option<&'a str>, refs: &'a [String], subject: &'a str) -> ThreadInput<'a> {
-        ThreadInput { account_id: "a", message_id: Some(mid), in_reply_to: irt, references: refs, subject, date: 1_000_000, gm_thrid: None }
+        ThreadInput { account_id: "a", message_id: Some(mid), in_reply_to: irt, references: refs, subject, date: 1_000_000, gm_thrid: None, ext_thread: None }
     }
 
     #[test]

@@ -109,12 +109,24 @@ fn folder_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Folder> {
     })
 }
 
+// Counts cover a folder's own rows plus Gmail-API label members (message_labels); outside Trash/Spam a message that
+// carries the TRASH/SPAM label is not counted, as Gmail hides it from its other labels (msgstore::NOT_IN_TRASH_LABEL).
+// Two indexed sub-counts instead of one OR so SQLite can use messages_folder_date and message_labels_folder.
 const FOLDER_SQL: &str = "SELECT f.id, f.account_id, f.path, f.name, f.parent_id, f.role, f.selectable, f.depth,
-        COALESCE(SUM(m.seen=0), 0), COUNT(m.id)
-    FROM folders f LEFT JOIN messages m ON m.folder_id=f.id";
+        (SELECT COUNT(*) FROM messages m WHERE m.folder_id=f.id AND m.seen=0 AND (COALESCE(f.role,'') IN ('trash','junk') OR NOT EXISTS
+            (SELECT 1 FROM message_labels xl JOIN folders xf ON xf.id=xl.folder_id WHERE xl.message_rowid=m.id AND xf.role IN ('trash','junk'))))
+      + (SELECT COUNT(*) FROM message_labels ml JOIN messages m ON m.id=ml.message_rowid WHERE ml.folder_id=f.id AND m.seen=0
+            AND (COALESCE(f.role,'') IN ('trash','junk') OR NOT EXISTS
+            (SELECT 1 FROM message_labels xl JOIN folders xf ON xf.id=xl.folder_id WHERE xl.message_rowid=m.id AND xf.role IN ('trash','junk')))),
+        (SELECT COUNT(*) FROM messages m WHERE m.folder_id=f.id AND (COALESCE(f.role,'') IN ('trash','junk') OR NOT EXISTS
+            (SELECT 1 FROM message_labels xl JOIN folders xf ON xf.id=xl.folder_id WHERE xl.message_rowid=m.id AND xf.role IN ('trash','junk'))))
+      + (SELECT COUNT(*) FROM message_labels ml JOIN messages m ON m.id=ml.message_rowid WHERE ml.folder_id=f.id
+            AND (COALESCE(f.role,'') IN ('trash','junk') OR NOT EXISTS
+            (SELECT 1 FROM message_labels xl JOIN folders xf ON xf.id=xl.folder_id WHERE xl.message_rowid=m.id AND xf.role IN ('trash','junk'))))
+    FROM folders f";
 
 pub(crate) fn folder_by_id(c: &Connection, id: i64) -> Result<Folder> {
-    c.query_row(&format!("{FOLDER_SQL} WHERE f.id=?1 GROUP BY f.id"), params![id], folder_from_row)
+    c.query_row(&format!("{FOLDER_SQL} WHERE f.id=?1"), params![id], folder_from_row)
         .optional()?
         .ok_or_else(|| ApiError::not_found("The folder"))
 }
@@ -166,6 +178,11 @@ impl Engine {
     }
 
     pub async fn account_test(&self, imap: ServerConfig, smtp_cfg: ServerConfig, password: Option<String>) -> Result<AccountTestResult> {
+        if crate::providers::backend_for_auth(imap.auth) != crate::providers::Backend::Imap {
+            // OAuth accounts use the Gmail API / Microsoft Graph for both reading and sending (providers/mod.rs).
+            let r = self.api_test(&imap).await;
+            return Ok(AccountTestResult { imap_ok: r.is_ok(), smtp_ok: r.is_ok(), imap_error: r.clone().err(), smtp_error: r.err() });
+        }
         let imap_res = async {
             validate_server("imap", &imap)?;
             let cred = self.test_credential(&imap, password.as_deref()).await?;
@@ -425,7 +442,7 @@ impl Engine {
         self.store()
             .call(move |c| {
                 let sql = format!(
-                    "{FOLDER_SQL} WHERE (?1 IS NULL OR f.account_id=?1) GROUP BY f.id
+                    "{FOLDER_SQL} WHERE (?1 IS NULL OR f.account_id=?1)
                      ORDER BY f.account_id, CASE f.role WHEN 'inbox' THEN 0 WHEN 'drafts' THEN 1 WHEN 'sent' THEN 2 WHEN 'archive' THEN 3
                         WHEN 'junk' THEN 4 WHEN 'trash' THEN 5 WHEN 'all' THEN 6 WHEN 'flagged' THEN 7 ELSE 8 END, f.path COLLATE NOCASE"
                 );
@@ -441,8 +458,17 @@ impl Engine {
         if name.is_empty() {
             return Err(ApiError::invalid("name", "Enter a folder name."));
         }
-        let aid = account_id.clone();
         let pid = parent_id.as_deref().map(|p| parse_id(p, "The parent folder")).transpose()?;
+        let acct = self.account(&account_id).await?;
+        if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            if name.contains('/') {
+                return Err(ApiError::invalid("name", "A folder name cannot contain “/”."));
+            }
+            let id = self.api_folder_create(&acct, pid, &name).await?;
+            self.emit("mail://changed", serde_json::json!({ "folderIds": [id.to_string()] }));
+            return self.store().call(move |c| folder_by_id(c, id)).await;
+        }
+        let aid = account_id.clone();
         let (delim, parent_path) = self
             .store()
             .call(move |c| {
@@ -494,6 +520,15 @@ impl Engine {
         if f.role == Some(FolderRole::Inbox) {
             return Err(ApiError::invalid("name", "The Inbox cannot be renamed."));
         }
+        let acct = self.account(&f.account_id).await?;
+        if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            if name.contains('/') {
+                return Err(ApiError::invalid("name", "A folder name cannot contain “/”."));
+            }
+            self.api_folder_rename(&acct, &f, &name).await?;
+            self.emit("mail://changed", serde_json::json!({ "folderIds": [id] }));
+            return self.store().call(move |c| folder_by_id(c, fid)).await;
+        }
         let aid = f.account_id.clone();
         let delim = self.store().call(move |c| delimiter_for(c, &aid)).await?;
         if name.contains(delim.as_str()) {
@@ -533,6 +568,13 @@ impl Engine {
         if matches!(f.role, Some(FolderRole::Inbox) | Some(FolderRole::Trash) | Some(FolderRole::Sent) | Some(FolderRole::Drafts)) {
             return Err(ApiError::invalid("folder", format!("{} is a system folder and cannot be deleted.", f.name)));
         }
+        let acct = self.account(&f.account_id).await?;
+        if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            self.api_folder_delete(&acct, &f).await?;
+            self.emit("mail://changed", serde_json::json!({ "folderIds": [id] }));
+            self.emit_counts().await;
+            return Ok(());
+        }
         let path = f.path.clone();
         self.with_interactive(&f.account_id, move |conn| {
             let p = path.clone();
@@ -563,6 +605,13 @@ impl Engine {
     pub async fn folder_mark_read(&self, id: String) -> Result<()> {
         let fid = parse_id(&id, "The folder")?;
         let f = self.store().call(move |c| folder_by_id(c, fid)).await?;
+        let acct = self.account(&f.account_id).await?;
+        if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            self.api_folder_mark_read(&acct, fid).await?;
+            self.emit("mail://changed", serde_json::json!({ "folderIds": [id] }));
+            self.emit_counts().await;
+            return Ok(());
+        }
         let path = f.path.clone();
         self.with_interactive(&f.account_id, move |conn| {
             let p = path.clone();

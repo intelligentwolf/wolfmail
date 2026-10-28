@@ -205,6 +205,7 @@ async fn store_rows(store: &Store, ctx: &AccountCtx, folder_id: i64, rows: Vec<F
                         modseq: r.modseq,
                         gm_thrid: r.gm_thrid,
                         gm_msgid: r.gm_msgid,
+                        ext_thread: None,
                     },
                 )?;
                 ids.push(id);

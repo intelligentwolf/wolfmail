@@ -23,6 +23,10 @@ const POLL_NO_IDLE: Duration = Duration::from_secs(2 * 60);
 const IDLE_REISSUE: Duration = Duration::from_secs(25 * 60);
 const BACKOFF_MIN: Duration = Duration::from_secs(15);
 const BACKOFF_MAX: Duration = Duration::from_secs(10 * 60);
+/// Gmail API / Graph accounts poll for changes this often while WolfMail runs (no IMAP IDLE; Gmail push needs
+/// Cloud Pub/Sub and Graph push needs a public webhook — neither exists for a desktop app). Source: docs/API.md
+/// "Engine notes → Providers".
+const API_POLL: Duration = Duration::from_secs(30);
 
 pub struct AccountHandle {
     pub wake: Notify,
@@ -134,6 +138,9 @@ async fn run(engine: Engine, account_id: String, handle: Arc<AccountHandle>) {
             Ok(a) if a.enabled => a,
             _ => return,
         };
+        if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            return run_api(engine, account_id, handle).await;
+        }
         if !inbox_only {
             engine.set_status(&account_id, AccountStatus::Syncing, None).await;
         }
@@ -180,6 +187,75 @@ async fn run(engine: Engine, account_id: String, handle: Arc<AccountHandle>) {
                 engine.set_status(&account_id, status, Some(e.message.clone())).await;
                 if status == AccountStatus::AuthError {
                     // Retrying a refused password locks accounts on many servers — wait for the user.
+                    handle.wake.notified().await;
+                } else {
+                    tokio::select! {
+                        _ = handle.wake.notified() => {}
+                        _ = tokio::time::sleep(backoff) => {}
+                    }
+                    backoff = backoff_next(backoff);
+                }
+            }
+        }
+    }
+}
+
+/// Sync loop for a Gmail-API / Graph account: a pass, then wait for the poll interval or a wake-up.
+async fn run_api(engine: Engine, account_id: String, handle: Arc<AccountHandle>) {
+    let mut backoff = BACKOFF_MIN;
+    let mut first = true;
+    loop {
+        let acct = match engine.account(&account_id).await {
+            Ok(a) if a.enabled => a,
+            _ => return,
+        };
+        if first {
+            engine.set_status(&account_id, AccountStatus::Syncing, None).await;
+            first = false;
+        }
+        match engine.api_pass(&acct).await {
+            Ok((more, changed, new_inbox)) => {
+                backoff = BACKOFF_MIN;
+                engine.set_status(&account_id, AccountStatus::Ok, None).await;
+                if !changed.is_empty() {
+                    engine.emit("mail://changed", serde_json::json!({ "folderIds": changed }));
+                    engine.emit_counts().await;
+                }
+                if !new_inbox.is_empty() {
+                    let summaries = engine
+                        .store()
+                        .call(move |s| {
+                            let mut v = Vec::new();
+                            for id in new_inbox {
+                                if let Ok(m) = msgstore::get_summary(s, id) {
+                                    v.push(m);
+                                }
+                            }
+                            Ok(v)
+                        })
+                        .await
+                        .unwrap_or_default();
+                    if !summaries.is_empty() {
+                        let folder = summaries[0].folder_id.clone();
+                        engine.emit("mail://new", serde_json::json!({ "accountId": account_id, "folderId": folder, "messages": summaries }));
+                    }
+                }
+                let wait = if more { Duration::from_millis(500) } else { API_POLL };
+                tokio::select! {
+                    _ = handle.wake.notified() => {}
+                    _ = handle.inbox.notified() => {}
+                    _ = tokio::time::sleep(wait) => {}
+                }
+            }
+            Err(e) => {
+                let status = match e.kind {
+                    ErrorKind::Auth | ErrorKind::OauthConfig => AccountStatus::AuthError,
+                    ErrorKind::Network | ErrorKind::Tls => AccountStatus::Offline,
+                    _ => AccountStatus::Error,
+                };
+                engine.set_status(&account_id, status, Some(e.message.clone())).await;
+                if status == AccountStatus::AuthError {
+                    // Waits for a new sign-in (oauth_authorize restarts the runner) or an explicit sync.
                     handle.wake.notified().await;
                 } else {
                     tokio::select! {

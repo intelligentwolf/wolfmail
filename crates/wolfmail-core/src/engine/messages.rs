@@ -3,6 +3,7 @@
 // Source: docs/API.md commands messages_* / message_* / thread_get / attachment_* / search / contacts_suggest /
 // unsubscribe, and the `undoable` event (token valid 10 s).
 use super::accounts::folder_with_role;
+use super::apiops::{ApiGroup, ApiUndo};
 use super::{Engine, UndoEntry, UndoMove};
 use crate::db::now_ms;
 use crate::error::{ApiError, Result};
@@ -71,6 +72,13 @@ impl Engine {
         if let Some(raw) = self.store().call(move |c| msgstore::body_raw(c, id)).await? {
             return Ok(raw);
         }
+        let remote: Option<String> = self
+            .store()
+            .call(move |c| Ok(c.query_row("SELECT remote_id FROM messages WHERE id=?1", params![id], |r| r.get(0)).optional()?.flatten()))
+            .await?;
+        if remote.is_some() {
+            return self.api_raw(id).await;
+        }
         let (_, path, uid, aid) = self.store().call(move |c| msgstore::locate(c, id)).await?;
         let store = self.store().clone();
         self.with_interactive(&aid, move |conn| {
@@ -119,8 +127,13 @@ impl Engine {
     pub async fn messages_set_flags(&self, ids: Vec<String>, add: Vec<String>, remove: Vec<String>) -> Result<()> {
         let add_f: Vec<String> = add.iter().map(|f| flag_name(f).map(String::from)).collect::<Result<_>>()?;
         let rem_f: Vec<String> = remove.iter().map(|f| flag_name(f).map(String::from)).collect::<Result<_>>()?;
-        let groups = self.groups(&ids).await?;
+        let (ids, api) = self.api_partition(&ids).await?;
         let mut touched = Vec::new();
+        for g in &api {
+            self.api_set_flags(g, &add, &remove).await?;
+            touched.extend(self.account_folder_ids(&g.account.id).await?);
+        }
+        let groups = self.groups(&ids).await?;
         for g in groups {
             let uids: Vec<u32> = g.items.iter().map(|(_, u)| *u).collect();
             let (path, a, r) = (g.path.clone(), add_f.clone(), rem_f.clone());
@@ -157,8 +170,13 @@ impl Engine {
         if let Some(bad) = add.iter().chain(remove.iter()).find(|k| !valid_keyword(k)) {
             return Err(ApiError::invalid("tags", format!("“{bad}” cannot be used as a tag keyword.")));
         }
-        let groups = self.groups(&ids).await?;
+        let (ids, api) = self.api_partition(&ids).await?;
         let mut touched = Vec::new();
+        for g in &api {
+            self.api_set_tags(g, &add, &remove).await?;
+            touched.extend(self.account_folder_ids(&g.account.id).await?);
+        }
+        let groups = self.groups(&ids).await?;
         for g in groups {
             let uids: Vec<u32> = g.items.iter().map(|(_, u)| *u).collect();
             let (path, a, r) = (g.path.clone(), add.clone(), remove.clone());
@@ -276,9 +294,16 @@ impl Engine {
         Ok((fid, f.path))
     }
 
-    async fn move_with_undo(&self, groups: Vec<Group>, dest: impl Fn(&str) -> Option<(i64, String)>, label: &str) -> Result<()> {
+    async fn move_with_undo(
+        &self,
+        groups: Vec<Group>,
+        dest: impl Fn(&str) -> Option<(i64, String)>,
+        label: &str,
+        api: Vec<ApiUndo>,
+        api_touched: Vec<String>,
+    ) -> Result<()> {
         let mut moves = Vec::new();
-        let mut touched = Vec::new();
+        let mut touched = api_touched;
         for g in groups {
             let Some((to_fid, to_path)) = dest(&g.account_id) else { continue };
             if to_fid == g.folder_id {
@@ -290,13 +315,13 @@ impl Engine {
         }
         self.emit("mail://changed", serde_json::json!({ "folderIds": touched }));
         self.emit_counts().await;
-        if !moves.is_empty() {
+        if !moves.is_empty() || !api.is_empty() {
             let token = uuid::Uuid::new_v4().to_string();
             let expires_at = now_ms() + UNDO_MS;
             {
                 let mut u = self.inner.undo.lock();
                 u.retain(|_, e| e.expires_at > now_ms());
-                u.insert(token.clone(), UndoEntry { expires_at, moves });
+                u.insert(token.clone(), UndoEntry { expires_at, moves, api });
             }
             self.emit("undoable", serde_json::json!({ "token": token, "label": label, "expiresAt": expires_at }));
         }
@@ -306,22 +331,45 @@ impl Engine {
     pub async fn messages_move(&self, ids: Vec<String>, folder_id: String) -> Result<()> {
         let fid: i64 = folder_id.parse().map_err(|_| ApiError::not_found("The folder"))?;
         let dest = self.store().call(move |c| super::accounts::folder_by_id(c, fid)).await?;
-        let groups = self.groups(&ids).await?;
-        if groups.iter().any(|g| g.account_id != dest.account_id) {
-            return self.cross_account_copy(groups, &dest, true).await;
-        }
         let n = ids.len();
+        let (imap_ids, api) = self.api_partition(&ids).await?;
+        let (same, other): (Vec<ApiGroup>, Vec<ApiGroup>) = api.into_iter().partition(|g| g.account.id == dest.account_id);
+        let mut undo = Vec::new();
+        let mut touched = Vec::new();
+        for g in &same {
+            undo.push(self.api_move(g, fid).await?);
+            touched.extend(self.account_folder_ids(&g.account.id).await?);
+        }
+        let mut cross: Vec<i64> = other.into_iter().flat_map(|g| g.rows).collect();
+        let groups = self.groups(&imap_ids).await?;
+        let (local, remote): (Vec<Group>, Vec<Group>) = groups.into_iter().partition(|g| g.account_id == dest.account_id);
+        cross.extend(remote.iter().flat_map(|g| g.items.iter().map(|(id, _)| *id)));
+        if !cross.is_empty() {
+            self.cross_account_rows(cross, &dest, true).await?;
+        }
         let label = format!("Moved {n} message{} to {}", if n == 1 { "" } else { "s" }, dest.name);
         let (dfid, dpath) = (fid, dest.path.clone());
-        self.move_with_undo(groups, move |_| Some((dfid, dpath.clone())), &label).await
+        self.move_with_undo(local, move |_| Some((dfid, dpath.clone())), &label, undo, touched).await
     }
 
     pub async fn messages_copy(&self, ids: Vec<String>, folder_id: String) -> Result<()> {
         let fid: i64 = folder_id.parse().map_err(|_| ApiError::not_found("The folder"))?;
         let dest = self.store().call(move |c| super::accounts::folder_by_id(c, fid)).await?;
-        let groups = self.groups(&ids).await?;
-        if groups.iter().any(|g| g.account_id != dest.account_id) {
-            return self.cross_account_copy(groups, &dest, false).await;
+        let (imap_ids, api) = self.api_partition(&ids).await?;
+        let (same, other): (Vec<ApiGroup>, Vec<ApiGroup>) = api.into_iter().partition(|g| g.account.id == dest.account_id);
+        for g in &same {
+            self.api_copy(g, fid).await?;
+        }
+        let mut cross: Vec<i64> = other.into_iter().flat_map(|g| g.rows).collect();
+        let groups = self.groups(&imap_ids).await?;
+        let (groups, remote): (Vec<Group>, Vec<Group>) = groups.into_iter().partition(|g| g.account_id == dest.account_id);
+        cross.extend(remote.iter().flat_map(|g| g.items.iter().map(|(id, _)| *id)));
+        if !cross.is_empty() {
+            self.cross_account_rows(cross, &dest, false).await?;
+        }
+        if groups.is_empty() {
+            self.emit("mail://changed", serde_json::json!({ "folderIds": [dest.id] }));
+            return Ok(());
         }
         for g in &groups {
             let uids: Vec<u32> = g.items.iter().map(|(_, u)| *u).collect();
@@ -336,17 +384,24 @@ impl Engine {
         Ok(())
     }
 
-    /// Messages dragged to another account's folder: APPEND the raw message there (and delete the original when
-    /// moving). IMAP has no cross-server MOVE.
-    async fn cross_account_copy(&self, groups: Vec<Group>, dest: &Folder, delete_source: bool) -> Result<()> {
-        for g in groups {
-            for (id, _) in &g.items {
-                let raw = self.raw_bytes(*id).await?;
-                let seen = self.store().call({
+    /// Messages dragged to another account's folder: put the raw message there (IMAP APPEND / Gmail insert) and,
+    /// when moving, remove the original (IMAP: deleted + expunged; API accounts: moved to Trash). There is no
+    /// cross-server MOVE in IMAP or in the provider APIs.
+    async fn cross_account_rows(&self, rows: Vec<i64>, dest: &Folder, delete_source: bool) -> Result<()> {
+        let dest_acct = self.account(&dest.account_id).await?;
+        let dest_api = crate::providers::backend(&dest_acct) != crate::providers::Backend::Imap;
+        for id in &rows {
+            let raw = self.raw_bytes(*id).await?;
+            let seen = self
+                .store()
+                .call({
                     let id = *id;
                     move |c| Ok(c.query_row("SELECT seen FROM messages WHERE id=?1", params![id], |r| r.get::<_, bool>(0))?)
                 })
                 .await?;
+            if dest_api {
+                self.api_receive(dest, &raw, seen).await?;
+            } else {
                 let path = dest.path.clone();
                 self.with_interactive(&dest.account_id, move |conn| {
                     let (path, raw) = (path.clone(), raw.clone());
@@ -354,7 +409,14 @@ impl Engine {
                 })
                 .await?;
             }
-            if delete_source {
+        }
+        if delete_source {
+            let ids: Vec<String> = rows.iter().map(|i| i.to_string()).collect();
+            let (imap_ids, api) = self.api_partition(&ids).await?;
+            for g in &api {
+                self.api_trash(g).await?;
+            }
+            for g in self.groups(&imap_ids).await? {
                 let uids: Vec<u32> = g.items.iter().map(|(_, u)| *u).collect();
                 let path = g.path.clone();
                 self.with_interactive(&g.account_id, move |conn| {
@@ -373,12 +435,21 @@ impl Engine {
                     .await?;
             }
         }
-        self.sync_now(Some(dest.account_id.clone())).await?;
+        if !dest_api {
+            self.sync_now(Some(dest.account_id.clone())).await?;
+        }
         self.emit("mail://changed", serde_json::json!({ "folderIds": [dest.id] }));
         Ok(())
     }
 
     pub async fn messages_archive(&self, ids: Vec<String>) -> Result<()> {
+        let n = ids.len();
+        let (ids, api) = self.api_partition(&ids).await?;
+        let (mut undo, mut touched) = (Vec::new(), Vec::new());
+        for g in &api {
+            undo.push(self.api_archive(g).await?);
+            touched.extend(self.account_folder_ids(&g.account.id).await?);
+        }
         let groups = self.groups(&ids).await?;
         let mut dests = BTreeMap::new();
         for g in &groups {
@@ -386,12 +457,20 @@ impl Engine {
                 dests.insert(g.account_id.clone(), self.ensure_role_folder(&g.account_id, FolderRole::Archive, "Archive").await?);
             }
         }
-        let n = ids.len();
-        self.move_with_undo(groups, move |a| dests.get(a).cloned(), &format!("Archived {n} message{}", if n == 1 { "" } else { "s" }))
+        self.move_with_undo(groups, move |a| dests.get(a).cloned(), &format!("Archived {n} message{}", if n == 1 { "" } else { "s" }), undo, touched)
             .await
     }
 
     pub async fn messages_trash(&self, ids: Vec<String>) -> Result<()> {
+        let n = ids.len();
+        let (ids, api) = self.api_partition(&ids).await?;
+        let (mut undo, mut touched) = (Vec::new(), Vec::new());
+        for g in &api {
+            if let Some(u) = self.api_trash(g).await? {
+                undo.push(u);
+            }
+            touched.extend(self.account_folder_ids(&g.account.id).await?);
+        }
         let groups = self.groups(&ids).await?;
         let mut to_move = Vec::new();
         let mut dests = BTreeMap::new();
@@ -422,14 +501,20 @@ impl Engine {
                 to_move.push(g);
             }
         }
-        let n = ids.len();
-        self.move_with_undo(to_move, move |a| dests.get(a).cloned(), &format!("Deleted {n} message{}", if n == 1 { "" } else { "s" }))
+        self.move_with_undo(to_move, move |a| dests.get(a).cloned(), &format!("Deleted {n} message{}", if n == 1 { "" } else { "s" }), undo, touched)
             .await
     }
 
     pub async fn messages_junk(&self, ids: Vec<String>, junk: bool) -> Result<()> {
         // Source: RFC 5788 registry — $Junk / $NotJunk keywords tell server-side filters what the user decided.
         let (add, remove) = if junk { ("$Junk", "$NotJunk") } else { ("$NotJunk", "$Junk") };
+        let n = ids.len();
+        let (ids, api) = self.api_partition(&ids).await?;
+        let (mut undo, mut touched) = (Vec::new(), Vec::new());
+        for g in &api {
+            undo.push(self.api_junk(g, junk).await?);
+            touched.extend(self.account_folder_ids(&g.account.id).await?);
+        }
         let groups = self.groups(&ids).await?;
         for g in &groups {
             let uids: Vec<u32> = g.items.iter().map(|(_, u)| *u).collect();
@@ -456,9 +541,8 @@ impl Engine {
                 dests.insert(g.account_id.clone(), d);
             }
         }
-        let n = ids.len();
         let label = if junk { format!("Marked {n} as junk") } else { format!("Moved {n} back to Inbox") };
-        self.move_with_undo(groups, move |a| dests.get(a).cloned(), &label).await
+        self.move_with_undo(groups, move |a| dests.get(a).cloned(), &label, undo, touched).await
     }
 
     pub async fn messages_undo(&self, token: String) -> Result<()> {
@@ -470,6 +554,9 @@ impl Engine {
             return Err(ApiError::invalid("token", "It is too late to undo that."));
         }
         let mut touched = Vec::new();
+        for u in entry.api {
+            touched.extend(self.api_undo(u).await?);
+        }
         for m in entry.moves {
             let (cur, orig) = (m.current_folder_id, m.original_folder_id);
             let (cur_path, orig_path): (String, String) = self
@@ -571,7 +658,10 @@ impl Engine {
         self.store()
             .call(move |c| {
                 let mut st = c.prepare(&format!(
-                    "SELECT {} FROM messages m JOIN folders f ON f.id=m.folder_id WHERE {where_sql} AND COALESCE(f.role,'') <> 'all'
+                    // IMAP "All Mail" copies are duplicates of other folders' rows; a Gmail-API account keeps its
+                    // single row per message in its All Mail folder (remote_id set), so that one must be searched.
+                    "SELECT {} FROM messages m JOIN folders f ON f.id=m.folder_id WHERE {where_sql}
+                       AND (COALESCE(f.role,'') <> 'all' OR f.remote_id IS NOT NULL)
                      ORDER BY m.date DESC LIMIT {limit}",
                     msgstore::SUMMARY_COLS
                 ))?;

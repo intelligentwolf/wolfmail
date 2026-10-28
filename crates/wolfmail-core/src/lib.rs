@@ -16,4 +16,5 @@ pub mod autodetect;
 pub mod import;
 pub mod oauth;
 pub mod iw;
+pub mod providers;
 pub mod engine;
