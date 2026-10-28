@@ -36,6 +36,9 @@ pub enum OAuthProvider {
     Microsoft,
 }
 
+/// Source: Entra admin center → App registrations → "IntellgentWolf" → Application (client) ID (read 28 Oct 2026).
+const MS_DEFAULT_CLIENT_ID: &str = "010a0450-dbef-41f6-9710-dd499dc7566e";
+
 struct ProviderCfg {
     auth_url: &'static str,
     token_url: &'static str,
@@ -59,7 +62,13 @@ fn cfg(p: OAuthProvider) -> ProviderCfg {
             auth_url: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize",
             token_url: "https://login.microsoftonline.com/common/oauth2/v2.0/token",
             scopes: "openid profile email offline_access Mail.ReadWrite Mail.Send User.Read",
-            client_id: option_env!("WOLFMAIL_MS_CLIENT_ID"),
+            // Public client id of IntelligentWolf's Entra app (Paul, 28 Oct 2026: "use the same ones"), which has a
+            // "Mobile and desktop applications" platform with redirect http://localhost. Not a secret: desktop apps
+            // are public clients and send no secret. A build can still override it with WOLFMAIL_MS_CLIENT_ID.
+            client_id: match option_env!("WOLFMAIL_MS_CLIENT_ID") {
+                Some(id) => Some(id),
+                None => Some(MS_DEFAULT_CLIENT_ID),
+            },
             client_secret: None,
             env_name: "WOLFMAIL_MS_CLIENT_ID",
         },
