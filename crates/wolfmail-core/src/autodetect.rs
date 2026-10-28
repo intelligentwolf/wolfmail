@@ -8,9 +8,9 @@
 //!   https://autoconfig.thunderbird.net/v1.1/<domain>.
 //! - Built-in values below are copied from the ISPDB entries fetched 2026-10-28 (gmail.com, outlook.com,
 //!   yahoo.com, icloud.com), Fastmail's "Server names and ports" help page, and 20i's StackMail settings as
-//!   recorded in intelligentwolf php-api/lib/iw_business_email.php:47-52 (docs.20i.com thunderbird settings).
-//! - StackMail's MX host is `mx.stackmail.com` (public DNS: `dig MX garagemaster.shop` → `10 mx.stackmail.com.`,
-//!   2026-10-28).
+//!   recorded in IntelligentWolf's business-email settings (docs.20i.com thunderbird settings).
+//! - StackMail's MX host is `mx.stackmail.com` (public DNS: the MX of a StackMail-hosted domain answers
+//!   `10 mx.stackmail.com.`, checked 2026-10-28).
 //! - RFC 6186 §3: `_imaps._tcp`, `_imap._tcp`, `_submissions._tcp` (RFC 8314 §5.1), `_submission._tcp`.
 use crate::error::{ApiError, Result};
 use crate::model::{AuthKind, AutodetectResult, Provider, Security, ServerConfig};

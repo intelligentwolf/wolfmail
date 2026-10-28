@@ -5,8 +5,8 @@ members = ["crates/wolfmail-core", "src-tauri"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-license = "UNLICENSED"
-authors = ["IntelligentWolf Ltd <paul@wolf.uk.com>"]
+license = "GPL-3.0-or-later"
+authors = ["IntelligentWolf Ltd"]
 
 [profile.dev]
 debug = 1

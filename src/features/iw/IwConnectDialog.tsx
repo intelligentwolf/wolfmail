@@ -110,6 +110,7 @@ export function IwConnectDialog() {
               </li>
             ))}
           </ul>
+          <NewToIw />
           <div className="flex gap-3 rounded-card p-4 ring-1 ring-border">
             <Lock className="mt-0.5 size-5 shrink-0 text-[var(--iw-go-text)]" />
             <p className="text-[13px] leading-relaxed">
@@ -159,5 +160,24 @@ export function IwConnectDialog() {
         </div>
       )}
     </Dialog>
+  );
+}
+
+/** Where IntelligentWolf sells itself (Paul, 28 Oct 2026: "just get them to the website"). */
+export const IW_HOME_URL = "https://intelligentwolf.com";
+
+/** For someone who found WolfMail on its own and has never heard of IntelligentWolf. Wording from intelligentwolf.com
+ *  (marketing-site/index.html); prices and sign-up live on the website, not here. */
+export function NewToIw() {
+  return (
+    <section aria-labelledby="iw-new" className="rounded-card bg-[var(--iw-red-wash)] p-4 ring-1 ring-[var(--iw-red)]/20">
+      <h3 id="iw-new" className="text-[13.5px] font-semibold">New to IntelligentWolf?</h3>
+      <p className="mt-1 text-[13px] leading-relaxed">
+        <strong>An AI team for your business. You just ask.</strong> You need an IntelligentWolf account to connect.
+      </p>
+      <Button size="sm" className="mt-3" onClick={() => openUrl(IW_HOME_URL).catch((e) => notify.error(e, "Couldn't open your browser"))}>
+        <ExternalLink /> Visit intelligentwolf.com
+      </Button>
+    </section>
   );
 }

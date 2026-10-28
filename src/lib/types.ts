@@ -112,7 +112,7 @@ export type IwPerson = {
   stage?: string; value?: number; currency?: string; score?: number;
   owner?: string; lastContactAt?: number; leadId?: string; contactId?: string; url: string;
   timeline: { at: number; kind: "email" | "call" | "meeting" | "note" | "task" | "invoice"; title: string }[];
-  /** Current values of the details WolfMail may change (php-api/lib/wolfmail.php WOLFMAIL_LEAD_FIELDS / _CONTACT_FIELDS). */
+  /** Current values of the details WolfMail may change (IntelligentWolf's WolfMail routes: WOLFMAIL_LEAD_FIELDS / _CONTACT_FIELDS). */
   fields?: Partial<Record<IwField, string>>;
 };
 export type IwField =

@@ -196,7 +196,7 @@ impl Engine {
             return Ok(json!({}));
         }
         let mut out = serde_json::Map::new();
-        // Source: php-api/lib/wolfmail.php WOLFMAIL_PEOPLE_MAX = 200 per request.
+        // Source: IntelligentWolf's WolfMail routes: WOLFMAIL_PEOPLE_MAX = 200 per request.
         for chunk in clean.chunks(200) {
             let r = self.iw().people(chunk).await?;
             if let Some(m) = r["matches"].as_object() {

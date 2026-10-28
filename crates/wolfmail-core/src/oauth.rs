@@ -9,14 +9,13 @@
 //! - Google "OAuth 2.0 for Mobile & Desktop Apps" (re-read 2026-10-28): create a "Desktop app" client; loopback
 //!   redirect `http://127.0.0.1:port`; "Desktop apps are public clients and cannot keep secrets confidential" —
 //!   client_secret is optional on the token requests; always use PKCE.
-//! - Scopes are the ones IntelligentWolf's Google app is already approved for (../intelligentwolf/php-api/lib/
-//!   gmail.php:28-50 GMAIL_SCOPES): gmail.modify, gmail.send, gmail.settings.basic, openid, email. NOT
+//! - Scopes are the ones IntelligentWolf's Google app is already approved for: gmail.modify, gmail.send, gmail.settings.basic, openid, email. NOT
 //!   https://mail.google.com/ (IMAP/SMTP), which that app is not approved for — mail goes through the Gmail API.
 //! - Microsoft Learn "OAuth 2.0 authorization code flow" (re-read 2026-10-28): `https://login.microsoftonline.com/
-//!   {tenant}/oauth2/v2.0/authorize|token`, tenant `common` (as IW: php-api/lib/microsoft.php:11,125); public
+//!   {tenant}/oauth2/v2.0/authorize|token`, tenant `common` (as IntelligentWolf does); public
 //!   clients "must not use secrets"; PKCE recommended; desktop apps using the system browser use redirect
 //!   `http://localhost`; refresh tokens only with `offline_access`.
-//! - Scopes = IW's Entra app (php-api/lib/microsoft.php:20-29 MS_SCOPES) minus Mail.Read (Mail.ReadWrite covers it):
+//! - Scopes = IW's Entra app (IntelligentWolf's Microsoft app) minus Mail.Read (Mail.ReadWrite covers it):
 //!   openid profile email offline_access Mail.ReadWrite Mail.Send User.Read — Microsoft Graph, not IMAP/SMTP.
 //! - Microsoft Learn "Redirect URI best practices": for localhost redirect URIs the port is ignored when matching,
 //!   so `http://localhost` registered once matches `http://localhost:<any port>`; IPv6 [::1] is not supported.
@@ -242,7 +241,7 @@ pub fn oauth_key_for(email: &str) -> String {
 /// keychain entry so mail and calendar grants can be revoked independently.
 /// Google: Calendar API v3 `auth/calendar` + People API `contacts.readonly` / `contacts.other.readonly` (Google
 /// "OAuth 2.0 Scopes for Google APIs": Calendar API v3, People API v1) — the scopes IntelligentWolf's Google app
-/// already uses (../intelligentwolf/php-api/lib/google_calendar.php:46-47, lib/gmail.php:28-50).
+/// already uses (IntelligentWolf's own Google/Microsoft apps).
 /// Microsoft: Graph `Calendars.ReadWrite` (calendarView + event CRUD, Graph "List calendarView" permissions table)
 /// and `Contacts.ReadWrite` (Graph contact resource) — the latter must be added to the Entra app.
 pub const PIM_GOOGLE_SCOPES: &str =

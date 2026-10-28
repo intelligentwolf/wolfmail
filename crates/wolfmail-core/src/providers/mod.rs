@@ -1,7 +1,7 @@
 //! Provider APIs: accounts signed in with Google or Microsoft sync through the Gmail API / Microsoft Graph instead
 //! of IMAP/SMTP, because the OAuth apps WolfMail shares with IntelligentWolf are approved for API scopes only
-//! (Source: ../intelligentwolf/php-api/lib/gmail.php:28-50 GMAIL_SCOPES = gmail.modify, gmail.send,
-//! gmail.settings.basic …; php-api/lib/microsoft.php:20-29 MS_SCOPES = Mail.Read, Mail.Send, Mail.ReadWrite,
+//! (Source: IntelligentWolf's own Google app scopes = gmail.modify, gmail.send,
+//! gmail.settings.basic …; IntelligentWolf's Microsoft scopes = Mail.Read, Mail.Send, Mail.ReadWrite,
 //! User.Read, offline_access …). Neither includes `https://mail.google.com/` nor `IMAP.AccessAsUser.All`, which
 //! IMAP/SMTP with OAuth would need.
 //!

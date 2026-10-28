@@ -437,6 +437,10 @@ async fn iw_create_task(s: State<'_, AppState>, message_id: String, title: Strin
     s.on(move |e| async move { e.iw_create_task(message_id, title, due).await }).await
 }
 #[tauri::command]
+async fn iw_search_query(s: State<'_, AppState>, question: String, today: String) -> R<Value> {
+    s.on(move |e| async move { e.iw_search_query(question, today).await }).await
+}
+#[tauri::command]
 async fn iw_people(s: State<'_, AppState>, emails: Vec<String>) -> R<Value> {
     s.on(move |e| async move { e.iw_people(emails).await }).await
 }
@@ -657,6 +661,7 @@ pub fn run() {
             iw_log_email,
             iw_create_task,
             iw_people,
+            iw_search_query,
             iw_contact_update,
             iw_contact_create,
             iw_chat_send,

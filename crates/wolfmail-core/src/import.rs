@@ -143,9 +143,9 @@ fn resolve_dir(profile: &Path, prefs: &Prefs, srv: &str) -> Option<PathBuf> {
 }
 
 /// Read one profile's prefs.js into importable accounts.
-/// WolfMail keeps one account per address, but a Thunderbird profile can hold the same address twice — Paul's had
-/// paul@wolf.uk.com on StackMail (old, password) and on Google Workspace (current, OAuth), and the import kept the
-/// first and silently dropped the Google one (28 Oct 2026). Keep one per address, preferring a Google/Microsoft
+/// WolfMail keeps one account per address, but a Thunderbird profile can hold the same address twice — e.g. an old
+/// password mailbox and the current Google Workspace sign-in — and the import kept the first and silently dropped the
+/// Google one (found 28 Oct 2026). Keep one per address, preferring a Google/Microsoft
 /// sign-in account (the provider login is the live mailbox; a duplicate password server is usually a leftover),
 /// otherwise the first in Thunderbird's own account order.
 fn dedupe_by_address(accounts: Vec<ImportAccount>) -> Vec<ImportAccount> {

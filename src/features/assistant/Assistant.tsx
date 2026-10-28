@@ -8,6 +8,8 @@ import { cn } from "../../lib/utils";
 import { Button, IconButton } from "../../components/ui/button";
 import { Spinner } from "../../components/ui/misc";
 import { invalidatePeople } from "../iw/people";
+import { IW_HOME_URL } from "../iw/IwConnectDialog";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 /**
  * The little wolf in the bottom-left corner — Alex from IntelligentWolf, called whatever the user likes ("Alex" by
@@ -32,7 +34,7 @@ const WALK_FRAME_MS = 160;
 /** How far he wanders from his corner, and how fast (px/s; IntelligentWolf AlexOrbHost uses orbPx * 0.9). */
 const ROAM_PX = 40;
 const PACE = SIZE * 0.9;
-/** Poll a running turn every 2 s, for up to the server's turn timeout (php-api/lib/wolfmail.php WOLFMAIL_TURN_TIMEOUT 600 s). */
+/** Poll a running turn every 2 s, for up to the server's turn timeout (IntelligentWolf's WolfMail routes: WOLFMAIL_TURN_TIMEOUT 600 s). */
 const POLL_MS = 2000;
 const POLL_FOR_MS = 600_000;
 
@@ -274,6 +276,13 @@ export function Assistant() {
                 Connect WolfMail to IntelligentWolf and I can tell you who's writing, update your contacts, draft replies and make tasks — right here in your inbox.
               </p>
               <Button onClick={() => { setUi({ iwConnect: true }); close(); }}><Link2 /> Connect IntelligentWolf</Button>
+              <p className="text-xs text-muted-foreground">
+                No account yet?{" "}
+                <button type="button" className="font-medium text-[var(--iw-red-text)] hover:underline"
+                  onClick={() => openUrl(IW_HOME_URL).catch((e) => notify.error(e, "Couldn't open your browser"))}>
+                  Visit intelligentwolf.com
+                </button>
+              </p>
             </div>
           ) : (
             <>

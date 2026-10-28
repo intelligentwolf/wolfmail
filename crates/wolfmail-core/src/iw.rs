@@ -241,7 +241,7 @@ impl IwClient<'_> {
     }
 
     pub async fn chat_turn(&self, turn: &str) -> Result<Value> {
-        // Source: php-api/lib/wolfmail.php wolfmail_turn_load() — 'wmt-' + 20 hex.
+        // Source: IntelligentWolf's WolfMail routes: wolfmail_turn_load() — 'wmt-' + 20 hex.
         if turn.len() != 24 || !turn.starts_with("wmt-") || !turn[4..].chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(ApiError::invalid("turn", "Not a chat message id."));
         }
@@ -262,7 +262,7 @@ impl IwClient<'_> {
 }
 
 /// The assistant's name: 1–24 letters, spaces, hyphens or apostrophes, starting with a letter.
-/// Source: IntelligentWolf php-api/lib/wolfmail.php wolfmail_assistant_name() — anything else is "Alex" there.
+/// Source: IntelligentWolf's WolfMail routes, wolfmail_assistant_name() — anything else is "Alex" there.
 pub fn valid_assistant_name(name: &str) -> bool {
     let n = name.trim();
     let count = n.chars().count();

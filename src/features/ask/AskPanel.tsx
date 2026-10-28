@@ -14,7 +14,7 @@ import { Avatar, Spinner } from "../../components/ui/misc";
  * Who and what: someone who remembers roughly what an email was ("the quote Sarah sent last week") but not the words
  * in it wants it open in a few seconds without learning search syntax. Flow: open the panel (the ✨ Ask button over the
  * list, or the command palette) → type the question → the assistant turns ONLY the question into WolfMail's search
- * (php-api /wolfmail/search-query) → the search runs here over the user's own mail → click a result to open it. The
+ * (IntelligentWolf /wolfmail/search-query) → the search runs here over the user's own mail → click a result to open it. The
  * query is shown and editable, so a near miss is one tweak away, and works without IntelligentWolf too.
  * Opened by the `wm:ask` event (detail = an optional question to run at once).
  */

@@ -1,13 +1,11 @@
 # Release: push a tag like v0.2.0 → every platform is built, update bundles are signed with the Tauri updater key,
 # and a GitHub release is published with latest.json for in-app updates.
 #
-# WHERE releases go: this source repo is private, and a private repo's release downloads need a login, so the
-# in-app updater (tauri.conf.json plugins.updater.endpoints) can't read them. Releases are therefore published to a
-# separate PUBLIC repo that holds only installers: IntelligentWolf-Ltd/wolfmail-releases.
+# WHERE releases go: this repo's own Releases (it is public, so the in-app updater — tauri.conf.json
+# plugins.updater.endpoints — can read latest.json without a login). Published with the workflow's own GITHUB_TOKEN.
 #
-# Secrets this workflow needs (set by Paul — see PROGRESS.md "Needs Paul"):
+# Secrets this workflow needs (set by Paul in the repo's Settings → Secrets):
 #   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD   from ~/.tauri/wolfmail.key(.password)
-#   WOLFMAIL_RELEASES_TOKEN   fine-grained PAT, Contents: read/write on IntelligentWolf-Ltd/wolfmail-releases only
 #   WOLFMAIL_GOOGLE_CLIENT_ID / _SECRET, WOLFMAIL_MS_CLIENT_ID      OAuth app ids (optional; sign-in says "not set up" without)
 # Code signing (Windows Authenticode, Apple notarisation) is added once the certificates exist.
 #
@@ -19,7 +17,7 @@ on:
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write   # create the release and upload the installers
 
 jobs:
   publish:
@@ -57,15 +55,13 @@ jobs:
       - run: npm ci
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f
         env:
-          GITHUB_TOKEN: ${{ secrets.WOLFMAIL_RELEASES_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           WOLFMAIL_GOOGLE_CLIENT_ID: ${{ secrets.WOLFMAIL_GOOGLE_CLIENT_ID }}
           WOLFMAIL_GOOGLE_CLIENT_SECRET: ${{ secrets.WOLFMAIL_GOOGLE_CLIENT_SECRET }}
           WOLFMAIL_MS_CLIENT_ID: ${{ secrets.WOLFMAIL_MS_CLIENT_ID }}
         with:
-          owner: IntelligentWolf-Ltd
-          repo: wolfmail-releases
           tagName: ${{ github.ref_name }}
           releaseName: "WolfMail ${{ github.ref_name }}"
           releaseBody: "Download the installer for your computer below. WolfMail updates itself after this."
@@ -73,3 +69,89 @@ jobs:
           prerelease: false
           uploadUpdaterJson: true
           args: ${{ matrix.args }}
+
+  # Checksums, build provenance and keyless signatures for every published file — the same as WolfStack's release
+  # (Source: wolfscale/wolfstack/.github/workflows/release.yml "Compute SHA-256 checksums", "Generate build-provenance
+  # attestation", "Sign binaries with cosign (keyless)"; same action pins and cosign v2.4.1).
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write       # upload SHA256SUMS + bundles, edit the notes
+      id-token: write       # cosign keyless OIDC + attest provenance
+      attestations: write   # actions/attest-build-provenance
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Download the release's files
+        run: |
+          mkdir dist
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist
+          ls -la dist
+
+      - name: Compute SHA-256 checksums
+        run: |
+          cd dist
+          sha256sum -- * > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Generate build-provenance attestation
+        # Before signing, so the subjects are only the published files (not the .cosign.bundle files).
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: dist/*
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Sign every file with cosign (keyless)
+        # No private key: the signing identity is this workflow, anchored to Sigstore's Fulcio CA and Rekor log.
+        run: |
+          cd dist
+          for f in *; do
+            [ "$f" = "SHA256SUMS" ] && continue
+            cosign sign-blob --yes --bundle "${f}.cosign.bundle" "$f"
+          done
+          cosign sign-blob --yes --bundle SHA256SUMS.cosign.bundle SHA256SUMS
+
+      - name: Upload checksums and signatures
+        run: gh release upload "$TAG" dist/SHA256SUMS dist/*.cosign.bundle --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Add verification steps to the release notes
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          cat >> notes.md <<'NOTES'
+
+          ---
+
+          ## Verifying this release
+
+          Every file is signed with [cosign](https://docs.sigstore.dev/) keyless OIDC (the signing identity is this
+          repository's release workflow, anchored to the Sigstore Fulcio CA and the Rekor transparency log) and has a
+          [SLSA build provenance](https://slsa.dev/spec/v1.0/provenance) attestation.
+
+          **Verify the SHA-256 checksum** (in the folder you downloaded to):
+          ```
+          sha256sum -c SHA256SUMS --ignore-missing
+          ```
+          On Windows (PowerShell): `Get-FileHash .\<file> -Algorithm SHA256` and compare with `SHA256SUMS`.
+          On macOS: `shasum -a 256 -c SHA256SUMS --ignore-missing`.
+
+          **Verify the build provenance:**
+          ```
+          gh attestation verify <file> --repo IntelligentWolf-Ltd/wolfmail
+          ```
+
+          **Verify the cosign signature:**
+          ```
+          cosign verify-blob \
+            --bundle <file>.cosign.bundle \
+            --certificate-identity-regexp 'https://github.com/IntelligentWolf-Ltd/wolfmail/\.github/workflows/release\.yml@.*' \
+            --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+            <file>
+          ```
+          NOTES
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md

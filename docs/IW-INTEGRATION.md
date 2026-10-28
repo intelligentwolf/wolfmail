@@ -7,22 +7,9 @@ renames him in Settings → IntelligentWolf), AI, tasks, booking links and one-c
 chooses**: an IW action on a message (AI, "Log to CRM", "Update … from this email", "Make task"), or a chat message
 to the assistant with the open email attached (shown as a removable chip) — and then only that one message.
 
-Server side: IntelligentWolf `php-api/lib/wolfmail.php` (logic) and `lib/wolfmail_routes.php` (HTTP), the pairing
-page `src/app/components/WolfMailPair.tsx` (`/app/wolfmail/pair`), proof suite `gates/proof/proof_wolfmail.php`.
+The routes below are served by IntelligentWolf; the pairing page is `https://intelligentwolf.com/app/wolfmail/pair`.
 
-Base URL: `https://intelligentwolf.com/api` (overridable in Settings → IntelligentWolf → Advanced, so `/dev/`
-testing works: `https://intelligentwolf.com/dev-api` is NOT a thing — use the prod base with a dev test org).
-
-## Why new routes and not the existing ones
-
-Facts from the IW codebase (`php-api/index.php` on 2026-10-28):
-- Normal sessions are 30-day bearer tokens from `/auth/login` (`lib/sessions.php`). Storing a user's full session
-  in a desktop app would give it every IW permission. Instead WolfMail gets a **device token** that only works on
-  `/wolfmail/*`, modelled on browser-agent pairing (`index.php:31418-31510`, `lib/browser_agent.php:409-458`).
-- CORS allows only `Content-Type, Authorization, X-Guest-Token` (`index.php:66-68`) — irrelevant to the desktop app
-  (Rust `reqwest` is not a browser), but noted for any future web build.
-- There is no single lookup-by-email across leads and contacts for a user session; there is no thread-summarise
-  endpoint; `/email/draft-with-ai` has no `record_usage` call. The `/wolfmail/*` routes below fix all three.
+Base URL: `https://intelligentwolf.com/api` (overridable in Settings → IntelligentWolf → Advanced).
 
 ## Pairing (device-code flow)
 
@@ -32,7 +19,7 @@ Facts from the IW codebase (`php-api/index.php` on 2026-10-28):
 2. WolfMail shows the code and opens `verifyUrl` in the system browser. The signed-in user (sent to sign in first if
    needed, then back) checks the code and presses **Connect WolfMail**; it connects the floor on screen there. The page
    calls `GET /wolfmail/pair/info?code=` and `POST /wolfmail/pair/confirm { code }` with their normal session
-   (refused while an admin is signed in as a customer — `lib/impersonation.php` 'secrets').
+   (refused while an IntelligentWolf admin is signed in as a customer).
 3. WolfMail polls `POST /wolfmail/pair/poll { pairId, pollSecret }` every 2 s
    → `{ state: "pending" }` | `{ state: "expired" }` |
      `{ state: "done", deviceToken: "wmd_<64 hex>", user: { name, email }, org: { id, name } }` (token made and returned once)
@@ -41,8 +28,7 @@ Facts from the IW codebase (`php-api/index.php` on 2026-10-28):
 All later calls: `Authorization: Bearer wmd_…`. The device is bound to one user + one floor (from the device record,
 never the request), and stops working when the user leaves the floor or disconnects it — from WolfMail
 (`DELETE /wolfmail/device`) or from the `/app/wolfmail/pair` page's list (`GET /wolfmail/devices`,
-`DELETE /wolfmail/devices/{id}`, session). Storage is files, no schema change: `storage/wolfmail/devices.json`,
-`pairings.json`, `<org>/<turn>.json`.
+`DELETE /wolfmail/devices/{id}`, session).
 
 ## Device routes
 
@@ -64,15 +50,14 @@ never the request), and stops working when the user leaves the floor or disconne
 | `GET /wolfmail/chat` | – | `{ messages: [{ role, text, at }] }` — the device's own conversation, last 40 |
 | `DELETE /wolfmail/device` | – | `204` |
 
-Writes need a writing role on the floor (owner/admin/manager/member) and go through the app's own routes on the
-loopback with a short-lived session for the device's person, revoked after (as the floor API runs Alex), so every
-permission check, workflow and audit line those routes have still applies. Fields WolfMail may change:
+Writes need a writing role on the floor (owner/admin/manager/member) and go through IntelligentWolf's normal rules, so
+every permission check, automation and audit entry still applies. Fields WolfMail may change:
 leads `name, company, phone, mobile, job_title, website, address_line1, address_line2, city, region, postcode, country,
 linkedin_url`; contacts `name, company, phone, mobile, job_title, website`. Never `notes` (PATCH replaces the field).
 
-The assistant: a chat turn runs in the background (`bin/wolfmail-chat-worker.php`) through `POST /coach/chat`, on the
-device's own `api` thread, with a prompt block saying he is in WolfMail, the name he answers to there, and the email
-the user shared (marked as information, never instructions). Metered like any Alex turn.
+The assistant: a chat turn runs in the background on IntelligentWolf as an ordinary Alex turn, in a conversation of
+its own, told he is in WolfMail, the name he answers to there, and the email the user shared (marked as information,
+never instructions). Metered like any Alex turn.
 
 ```ts
 type IwPerson = {
