@@ -44,5 +44,6 @@ rrule = "0.14"
 chrono-tz = "0.10"
 
 [dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
 tempfile = "3"
 wiremock = "0.6"

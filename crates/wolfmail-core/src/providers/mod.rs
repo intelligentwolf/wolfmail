@@ -14,6 +14,7 @@ use crate::error::{ApiError, ErrorKind, Result};
 use crate::model::{Account, AuthKind};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use std::sync::Arc;
 use std::time::Duration;
 
 /// How an account talks to its server.
@@ -52,8 +53,9 @@ impl Default for ApiBases {
     }
 }
 
-/// Retry budget for throttling / transient server errors.
-const MAX_ATTEMPTS: u32 = 6;
+/// Retry budget for throttling / transient server errors. Backoff 1+2+4+8+16+32+60 s ≈ 2 minutes: longer than
+/// Gmail's one-minute quota window, so a request that met a spent quota waits it out instead of failing.
+const MAX_ATTEMPTS: u32 = 8;
 const MAX_WAIT: Duration = Duration::from_secs(60);
 
 /// An HTTP status the caller wants to handle itself (Gmail history 404 → full sync; Graph delta 410 → reset).
@@ -63,23 +65,87 @@ pub enum Fetch<T> {
     Status(u16),
 }
 
-/// Gmail per-user quota is 250 units/second and users.messages.get costs 5 units (Gmail API "Usage limits"), so
-/// unpaced parallel fetches hit `rateLimitExceeded` at once — seen on Paul's first real Gmail sync (28 Oct 2026):
-/// one message stored, then the pass failed and backed off. Every Gmail request takes a slot from this pacer:
-/// 40 requests/second (at most 200 units/s even if all are gets), shared by all Gmail accounts in the process.
-const GMAIL_MIN_GAP: std::time::Duration = std::time::Duration::from_millis(25);
-static GMAIL_NEXT_SLOT: std::sync::LazyLock<tokio::sync::Mutex<tokio::time::Instant>> =
-    std::sync::LazyLock::new(|| tokio::sync::Mutex::new(tokio::time::Instant::now()));
+/// Gmail requests go through one queue per Google user, spaced by what each costs. Source: Gmail API "Usage
+/// limits" (developers.google.com/workspace/gmail/api/reference/quota, read 28 Oct 2026): 6,000 quota units per
+/// user per minute, with a per-method cost (gmail_cost). The earlier pacer assumed 250 units/second and 5 units per
+/// messages.get (now 20, or 60 for raw/full), so a sync spent the minute's quota in seconds and a delete straight
+/// after got 403 rateLimitExceeded until the retries ran out (Paul, 28 Oct 2026).
+/// 90 units/s with at most 500 saved up: any 60 s window then holds at most 500 + 60 × 90 = 5,900 units.
+const GMAIL_UNITS_PER_SEC: f64 = 90.0;
+const GMAIL_BURST_UNITS: f64 = 500.0;
+/// A method the quota page doesn't list (users.labels.patch) is charged as the dearest listed one (drafts.send,
+/// messages.send: 100), so an unknown cost can only slow the queue down, never overrun the quota.
+const GMAIL_UNLISTED_COST: f64 = 100.0;
 
-async fn gmail_pace() {
-    let wait_until = {
-        let mut next = GMAIL_NEXT_SLOT.lock().await;
-        let now = tokio::time::Instant::now();
-        let slot = if *next > now { *next } else { now };
-        *next = slot + GMAIL_MIN_GAP;
-        slot
-    };
-    tokio::time::sleep_until(wait_until).await;
+/// Quota units for one Gmail API request. Source: the Gmail "Usage limits" per-method table cited above.
+fn gmail_cost(method: &reqwest::Method, url: &reqwest::Url) -> f64 {
+    use reqwest::Method as M;
+    let path = url.path();
+    let rest = path.find("/users/me/").map(|i| &path[i + "/users/me/".len()..]).unwrap_or("");
+    let parts: Vec<&str> = rest.split('/').filter(|p| !p.is_empty()).collect();
+    let heavy_format = url.query_pairs().any(|(k, v)| k == "format" && matches!(v.as_ref(), "full" | "raw" | "html"));
+    match (method, parts.as_slice()) {
+        (&M::GET, ["profile"]) => 1.0,                                          // getProfile
+        (&M::GET, ["history"]) => 2.0,                                          // history.list
+        (&M::GET, ["labels"]) | (&M::GET, ["labels", _]) => 1.0,                // labels.list / labels.get
+        (&M::POST, ["labels"]) => 5.0,                                          // labels.create
+        (&M::PUT, ["labels", _]) | (&M::DELETE, ["labels", _]) => 5.0,          // labels.update / labels.delete
+        (&M::GET, ["messages"]) => 5.0,                                         // messages.list
+        (&M::POST, ["messages"]) => 25.0,                                       // messages.insert
+        (&M::GET, ["messages", _]) => if heavy_format { 60.0 } else { 20.0 },   // messages.get
+        (&M::POST, ["messages", "batchModify"]) => 50.0,                        // messages.batchModify
+        (&M::POST, ["messages", "send"]) => 100.0,                              // messages.send
+        (&M::POST, ["messages", _, "modify"]) => 5.0,                           // messages.modify
+        (&M::POST, ["messages", _, "trash"]) => 20.0,                           // messages.trash
+        (&M::POST, ["messages", _, "untrash"]) => 5.0,                          // messages.untrash
+        (&M::GET, ["drafts"]) => 5.0,                                           // drafts.list
+        (&M::POST, ["drafts"]) => 10.0,                                         // drafts.create
+        (&M::GET, ["drafts", _]) => if heavy_format { 60.0 } else { 20.0 },     // drafts.get
+        (&M::PUT, ["drafts", _]) => 15.0,                                       // drafts.update
+        (&M::DELETE, ["drafts", _]) => 10.0,                                    // drafts.delete
+        (&M::POST, ["drafts", "send"]) => 100.0,                                // drafts.send
+        _ => GMAIL_UNLISTED_COST,
+    }
+}
+
+struct Bucket {
+    units: f64,
+    at: tokio::time::Instant,
+}
+
+static GMAIL_QUEUES: std::sync::LazyLock<parking_lot::Mutex<std::collections::HashMap<String, Arc<tokio::sync::Mutex<Bucket>>>>> =
+    std::sync::LazyLock::new(Default::default);
+
+fn gmail_queue(user: &str) -> Arc<tokio::sync::Mutex<Bucket>> {
+    let mut all = GMAIL_QUEUES.lock();
+    Arc::clone(all.entry(user.to_ascii_lowercase()).or_insert_with(|| {
+        Arc::new(tokio::sync::Mutex::new(Bucket { units: GMAIL_BURST_UNITS, at: tokio::time::Instant::now() }))
+    }))
+}
+
+/// Wait for this request's turn. The tokio mutex hands out turns in arrival order and is held while waiting, so
+/// requests leave the queue one by one at the quota rate.
+async fn gmail_take(user: &str, cost: f64) {
+    let q = gmail_queue(user);
+    let mut b = q.lock().await;
+    let now = tokio::time::Instant::now();
+    b.units = (b.units + now.duration_since(b.at).as_secs_f64() * GMAIL_UNITS_PER_SEC).min(GMAIL_BURST_UNITS);
+    b.at = now;
+    if b.units < cost {
+        tokio::time::sleep(Duration::from_secs_f64((cost - b.units) / GMAIL_UNITS_PER_SEC)).await;
+        b.units = cost;
+        b.at = tokio::time::Instant::now();
+    }
+    b.units -= cost;
+}
+
+/// Google said slow down anyway (another WolfMail on the same account, or quota spent before a restart): empty the
+/// saved-up units so the queue runs at the steady rate from here.
+async fn gmail_drain(user: &str) {
+    let q = gmail_queue(user);
+    let mut b = q.lock().await;
+    b.units = 0.0;
+    b.at = tokio::time::Instant::now();
 }
 
 #[derive(Clone)]
@@ -88,6 +154,8 @@ pub struct ApiClient {
     token: String,
     base: String,
     graph: bool,
+    /// The Google/Microsoft user the token belongs to; Gmail's quota queue is per user.
+    user: String,
 }
 
 fn error_message(body: &[u8]) -> String {
@@ -106,8 +174,8 @@ fn is_rate_limit_403(body: &[u8]) -> bool {
 }
 
 impl ApiClient {
-    pub fn new(http: &reqwest::Client, token: String, base: &str, graph: bool) -> Self {
-        ApiClient { http: http.clone(), token, base: base.trim_end_matches('/').to_string(), graph }
+    pub fn new(http: &reqwest::Client, token: String, base: &str, graph: bool, user: &str) -> Self {
+        ApiClient { http: http.clone(), token, base: base.trim_end_matches('/').to_string(), graph, user: user.to_string() }
     }
 
     pub fn url(&self, path: &str) -> String {
@@ -129,7 +197,8 @@ impl ApiClient {
         loop {
             attempt += 1;
             if !self.graph {
-                gmail_pace().await;
+                let cost = build().build().map(|r| gmail_cost(r.method(), r.url())).unwrap_or(GMAIL_UNLISTED_COST);
+                gmail_take(&self.user, cost).await;
             }
             let mut req = build().bearer_auth(&self.token);
             if self.graph {
@@ -155,7 +224,12 @@ impl ApiClient {
             // at ≥1 s); Graph "Throttling guidance" (429 + Retry-After seconds; exponential backoff if absent).
             let transient = matches!(status, 429 | 500 | 502 | 503 | 504) || (status == 403 && is_rate_limit_403(&body));
             if transient && attempt < MAX_ATTEMPTS {
-                let wait = retry_after.map(Duration::from_secs).unwrap_or_else(|| Duration::from_secs(1 << (attempt - 1))).min(MAX_WAIT);
+                if !self.graph && matches!(status, 429 | 403) {
+                    gmail_drain(&self.user).await;
+                }
+                // Source: Gmail "Usage limits" — exponential backoff min(2^n + random ms ≤ 1000, maximum backoff).
+                let jitter = Duration::from_millis(u64::from(rand::random::<u16>() % 1000));
+                let wait = retry_after.map(Duration::from_secs).unwrap_or_else(|| Duration::from_secs(1 << (attempt - 1)) + jitter).min(MAX_WAIT);
                 tokio::time::sleep(wait).await;
                 continue;
             }
@@ -285,6 +359,54 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cost(m: reqwest::Method, u: &str) -> f64 {
+        gmail_cost(&m, &reqwest::Url::parse(&format!("https://gmail.googleapis.com/gmail/v1/users/me/{u}")).unwrap())
+    }
+
+    #[test]
+    fn gmail_costs_follow_the_quota_table() {
+        use reqwest::Method as M;
+        assert_eq!(cost(M::GET, "messages/abc?format=metadata"), 20.0);
+        assert_eq!(cost(M::GET, "messages/abc?format=minimal"), 20.0);
+        assert_eq!(cost(M::GET, "messages/abc?format=raw"), 60.0);
+        assert_eq!(cost(M::POST, "messages/batchModify"), 50.0);
+        assert_eq!(cost(M::POST, "messages/abc/modify"), 5.0);
+        assert_eq!(cost(M::POST, "messages/abc/trash"), 20.0);
+        assert_eq!(cost(M::POST, "messages/abc/untrash"), 5.0);
+        assert_eq!(cost(M::POST, "messages/send"), 100.0);
+        assert_eq!(cost(M::POST, "messages"), 25.0);
+        assert_eq!(cost(M::GET, "messages?q=x"), 5.0);
+        assert_eq!(cost(M::GET, "history?startHistoryId=1"), 2.0);
+        assert_eq!(cost(M::GET, "labels"), 1.0);
+        assert_eq!(cost(M::GET, "profile"), 1.0);
+        assert_eq!(cost(M::PUT, "drafts/d1"), 15.0);
+        assert_eq!(cost(M::POST, "drafts"), 10.0);
+        assert_eq!(cost(M::DELETE, "drafts/d1"), 10.0);
+        // users.labels.patch is not on the quota page: charged as the dearest listed method.
+        assert_eq!(cost(M::PATCH, "labels/L1"), GMAIL_UNLISTED_COST);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn gmail_queue_stays_under_the_per_minute_quota() {
+        // 400 metadata gets (20 units each = 8,000 units) queued at once for one user: no 60 s window may exceed
+        // Google's 6,000 units.
+        let user = "quota-test@example.com";
+        let start = tokio::time::Instant::now();
+        let mut done = Vec::new();
+        for _ in 0..400 {
+            gmail_take(user, 20.0).await;
+            done.push(start.elapsed().as_secs_f64());
+        }
+        for (i, t) in done.iter().enumerate() {
+            let in_window = done[i..].iter().take_while(|u| **u < t + 60.0).count() as f64 * 20.0;
+            assert!(in_window <= 6000.0, "{in_window} units in the minute from {t:.1}s");
+        }
+        // Another user has a queue of their own.
+        let other = tokio::time::Instant::now();
+        gmail_take("someone-else@example.com", 20.0).await;
+        assert!(other.elapsed() < Duration::from_millis(1));
+    }
 
     #[test]
     fn backend_follows_auth() {

@@ -36,8 +36,8 @@ impl Engine {
     pub(crate) async fn api_client(&self, acct: &Account) -> Result<ApiClient> {
         let token = oauth::access_token(&self.inner.http, self.inner.secrets.as_ref(), &acct.email).await.map_err(|e| e.with_account(&acct.id))?;
         Ok(match backend(acct) {
-            Backend::Gmail => ApiClient::new(&self.inner.http, token, &self.inner.api_bases.gmail, false),
-            _ => ApiClient::new(&self.inner.http, token, &self.inner.api_bases.graph, true),
+            Backend::Gmail => ApiClient::new(&self.inner.http, token, &self.inner.api_bases.gmail, false, &acct.email),
+            _ => ApiClient::new(&self.inner.http, token, &self.inner.api_bases.graph, true, &acct.email),
         })
     }
 
@@ -673,11 +673,11 @@ impl Engine {
         match crate::providers::backend_for_auth(cfg.auth) {
             Backend::Gmail => {
                 // Source: users.getProfile.
-                ApiClient::new(&self.inner.http, token, &self.inner.api_bases.gmail, false).get_json::<serde_json::Value>("/users/me/profile", &[]).await?;
+                ApiClient::new(&self.inner.http, token, &self.inner.api_bases.gmail, false, &cfg.username).get_json::<serde_json::Value>("/users/me/profile", &[]).await?;
             }
             _ => {
                 // Source: Graph inbox via its well-known name (needs Mail.ReadWrite, which WolfMail asks for).
-                ApiClient::new(&self.inner.http, token, &self.inner.api_bases.graph, true)
+                ApiClient::new(&self.inner.http, token, &self.inner.api_bases.graph, true, &cfg.username)
                     .get_json::<serde_json::Value>("/me/mailFolders/inbox", &[("$select", "id".to_string())])
                     .await?;
             }

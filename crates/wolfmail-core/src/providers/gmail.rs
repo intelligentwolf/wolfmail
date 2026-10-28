@@ -38,8 +38,8 @@ use std::collections::{BTreeSet, HashMap};
 
 /// Pages of messages.list (500 each) per pass while the first full listing runs.
 const BACKFILL_PAGES: usize = 4;
-/// Concurrent messages.get calls. Gmail allows 250 quota units/user/s and messages.get costs 5 — 8 in flight stays
-/// far below that (Source: Gmail API "Usage limits"; quota units per method).
+/// Concurrent messages.get calls. The quota itself is kept by the per-user queue in providers/mod.rs (gmail_take);
+/// this only bounds how many wait in it, so a delete or archive the user asks for has at most a few gets ahead of it.
 const PARALLEL_GETS: usize = 4;
 const BODY_PREFETCH_PER_PASS: i64 = 50;
 /// The synthetic folder every Gmail message row lives in (Gmail has no "All Mail" label id).
