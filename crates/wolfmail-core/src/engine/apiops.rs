@@ -254,16 +254,22 @@ impl Engine {
         let gm = Gmail { api: &api, store: self.store(), account_id: &g.account.id };
         let rows = self.remote_rows(&g.rows).await?;
         let mut items = Vec::new();
+        // Group rows by the exact change they need, then one batchModify per group (Gmail::relabel_many).
+        let mut groups: RelabelGroups = BTreeMap::new();
         for r in &rows {
-            let has = |l: &str| r.labels.iter().any(|(_, rid, _)| rid == l) || (l == "UNREAD" && !r.seen) || (l == "STARRED" && r.flagged);
+            let current = current_label_ids(r);
+            let has = |l: &str| current.iter().any(|c| c == l);
             // Only labels that really change, so undo restores the previous state exactly.
             let a: Vec<String> = add.iter().filter(|l| !has(l)).map(|l| l.to_string()).collect();
             let rm: Vec<String> = remove.iter().filter(|l| has(l)).map(|l| l.to_string()).collect();
             if a.is_empty() && rm.is_empty() {
                 continue;
             }
-            gm.modify(r.rowid, &r.remote_id, &a, &rm).await?;
-            items.push((r.rowid, r.remote_id.clone(), a, rm));
+            items.push((r.rowid, r.remote_id.clone(), a.clone(), rm.clone()));
+            groups.entry((a, rm)).or_default().push((r.rowid, r.remote_id.clone(), current));
+        }
+        for ((a, rm), members) in &groups {
+            gm.relabel_many(members, a, rm).await?;
         }
         Ok(ApiUndo::Gmail { account_id: g.account.id.clone(), items, untrash: false })
     }
@@ -286,13 +292,11 @@ impl Engine {
                 if rows.iter().any(in_trash) {
                     return Err(ApiError::invalid("ids", CAN_NOT_PURGE_GMAIL));
                 }
-                let gm = Gmail { api: &api, store: self.store(), account_id: &g.account.id };
-                let mut items = Vec::new();
-                for r in &rows {
-                    gm.trash(r.rowid, &r.remote_id).await?;
-                    items.push((r.rowid, r.remote_id.clone(), vec![], vec![]));
-                }
-                Ok(Some(ApiUndo::Gmail { account_id: g.account.id.clone(), items, untrash: true }))
+                // Source: Gmail "Managing labels" — TRASH can be applied manually, so a bulk delete is one
+                // batchModify adding TRASH per 1000 messages (same effect as users.messages.trash, which works
+                // per message). Undo removes TRASH again, also in bulk.
+                let _ = &api;
+                Ok(Some(self.gmail_relabel(g, &["TRASH"], &[]).await?))
             }
             _ => {
                 let gr = Graph { api: &api, store: self.store(), account_id: &g.account.id };
@@ -404,11 +408,21 @@ impl Engine {
                 let acct = self.account(&account_id).await?;
                 let api = self.api_client(&acct).await?;
                 let gm = Gmail { api: &api, store: self.store(), account_id: &acct.id };
-                for (row, rid, added, removed) in &items {
-                    if untrash {
+                if untrash {
+                    // Undo records written before bulk delete existed (untrash per message).
+                    for (row, rid, _, _) in &items {
                         gm.untrash(*row, rid).await?;
-                    } else {
-                        gm.modify(*row, rid, removed, added).await?;
+                    }
+                } else {
+                    // Reverse each recorded change, grouped like gmail_relabel so undo is bulk as well.
+                    let rows = self.remote_rows(&items.iter().map(|(r, ..)| *r).collect::<Vec<_>>()).await?;
+                    let mut groups: RelabelGroups = BTreeMap::new();
+                    for (row, rid, added, removed) in &items {
+                        let current = rows.iter().find(|r| r.rowid == *row).map(current_label_ids).unwrap_or_default();
+                        groups.entry((removed.clone(), added.clone())).or_default().push((*row, rid.clone(), current));
+                    }
+                    for ((add, remove), members) in &groups {
+                        gm.relabel_many(members, add, remove).await?;
                     }
                 }
                 self.account_folder_ids(&account_id).await
@@ -686,4 +700,19 @@ impl Engine {
             }
         }
     }
+}
+
+/// Rows grouped by the label change they need: (labels to add, labels to remove) → (rowid, remote id, current labels).
+type RelabelGroups = BTreeMap<(Vec<String>, Vec<String>), Vec<(i64, String, Vec<String>)>>;
+
+/// A Gmail row's current label ids as the API names them: its label folders plus UNREAD / STARRED from the flags.
+fn current_label_ids(r: &crate::providers::store::RemoteRow) -> Vec<String> {
+    let mut v: Vec<String> = r.labels.iter().map(|(_, rid, _)| rid.clone()).collect();
+    if !r.seen {
+        v.push("UNREAD".into());
+    }
+    if r.flagged {
+        v.push("STARRED".into());
+    }
+    v
 }

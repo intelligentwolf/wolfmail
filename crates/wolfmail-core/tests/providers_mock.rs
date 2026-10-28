@@ -211,6 +211,24 @@ async fn gmail_account_end_to_end() {
         ResponseTemplate::new(200).set_body_json(json!({ "id": id, "labelIds": m.2 }))
     }).mount(&server).await;
     let s = st.clone();
+    // users.messages.batchModify: same label change on up to 1000 ids; Google answers 204 with no body.
+    Mock::given(method("POST")).and(path(format!("{b}/messages/batchModify"))).respond_with(move |r: &Request| {
+        let body: Value = serde_json::from_slice(&r.body).unwrap();
+        let mut st = s.lock();
+        for id in body["ids"].as_array().unwrap() {
+            let m = st.msgs.iter_mut().find(|m| m.0 == id.as_str().unwrap()).unwrap();
+            for l in body["removeLabelIds"].as_array().unwrap() {
+                m.2.retain(|x| x != l.as_str().unwrap());
+            }
+            for l in body["addLabelIds"].as_array().unwrap() {
+                if !m.2.iter().any(|x| x == l.as_str().unwrap()) {
+                    m.2.push(l.as_str().unwrap().into());
+                }
+            }
+        }
+        ResponseTemplate::new(204)
+    }).mount(&server).await;
+    let s = st.clone();
     Mock::given(method("POST")).and(path_regex(format!("^{b}/messages/[^/]+/(un)?trash$"))).respond_with(move |r: &Request| {
         let segs: Vec<&str> = r.url.path().rsplit('/').collect();
         let (action, id) = (segs[0], segs[1].to_string());

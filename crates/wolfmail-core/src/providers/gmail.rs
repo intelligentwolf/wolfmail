@@ -575,6 +575,30 @@ impl Gmail<'_> {
 
     async fn mirror(&self, rowid: i64, v: &Value) -> Result<()> {
         let ids: Vec<String> = v.get("labelIds").and_then(|l| serde_json::from_value(l.clone()).ok()).unwrap_or_default();
+        self.apply_ids(rowid, ids).await
+    }
+
+    /// The same label change on many messages: one users.messages.batchModify per 1000 ids (Gmail API reference —
+    /// 50 quota units per call instead of 5 per message, so a bulk delete or archive no longer trips the per-user
+    /// rate limit; Paul hit "the provider is busy" deleting many messages, 28 Oct 2026). batchModify returns no
+    /// body, so each row's resulting labels are computed from its current ones and applied like `mirror` does.
+    /// `rows`: (rowid, remote id, current label ids including UNREAD/STARRED).
+    pub async fn relabel_many(&self, rows: &[(i64, String, Vec<String>)], add: &[String], remove: &[String]) -> Result<()> {
+        let ids: Vec<String> = rows.iter().map(|(_, rid, _)| rid.clone()).collect();
+        self.batch_modify(&ids, add, remove).await?;
+        for (rowid, _, current) in rows {
+            let mut next: Vec<String> = current.iter().filter(|l| !remove.contains(l)).cloned().collect();
+            for a in add {
+                if !next.contains(a) {
+                    next.push(a.clone());
+                }
+            }
+            self.apply_ids(*rowid, next).await?;
+        }
+        Ok(())
+    }
+
+    async fn apply_ids(&self, rowid: i64, ids: Vec<String>) -> Result<()> {
         let aid = self.account_id.to_string();
         self.store
             .call(move |c| {

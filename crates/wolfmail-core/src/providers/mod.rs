@@ -53,8 +53,8 @@ impl Default for ApiBases {
 }
 
 /// Retry budget for throttling / transient server errors.
-const MAX_ATTEMPTS: u32 = 4;
-const MAX_WAIT: Duration = Duration::from_secs(30);
+const MAX_ATTEMPTS: u32 = 6;
+const MAX_WAIT: Duration = Duration::from_secs(60);
 
 /// An HTTP status the caller wants to handle itself (Gmail history 404 → full sync; Graph delta 410 → reset).
 #[derive(Debug)]
