@@ -358,6 +358,10 @@ pub struct ViewQuery {
     pub sort: SortOrder,
     pub offset: i64,
     pub limit: i64,
+    /// Rows already on screen in an unread-only list. They stay listed after being read, so opening or selecting
+    /// one doesn't make it vanish under the cursor; moved or deleted rows still drop out. Ignored by other views.
+    #[serde(default)]
+    pub keep_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

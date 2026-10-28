@@ -81,6 +81,8 @@ type ViewQuery = {
   threaded: boolean;
   sort: "dateDesc" | "dateAsc";
   offset: number; limit: number;
+  keepIds?: string[];         // unread-only lists (unified "unread" or filter.unread): ids already on screen stay
+                              // listed after being read; moved/deleted rows still drop out. Ignored elsewhere.
 };
 type MessagePage = { total: number; items: MessageSummary[] };
 
@@ -206,6 +208,8 @@ dir: Argon2id-derived key, XChaCha20-Poly1305, primary password (see `crates/wol
 | `outbox://changed` | `OutboxItem` |
 | `oauth://pending` | `{ provider: "google"\|"microsoft", email, url }` — browser sign-in started; the UI shows the link with Open again / Copy / Cancel |
 | `oauth://done` | `{ email, ok }` — the sign-in finished, failed or was cancelled |
+| `link://mailto` | `string` (the mailto: URL) — a mailto link clicked in a message; sent only to the window it was clicked in, which opens a composer |
+| `link://failed` | `string` (message) — a web link clicked in a message could not be handed to the default browser |
 | `undoable` | `{ token, label, expiresAt }` |
 | `counts://changed` | `{ unreadInbox: number }` (unified, enabled accounts) |
 

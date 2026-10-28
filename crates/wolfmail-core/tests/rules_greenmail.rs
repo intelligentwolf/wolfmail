@@ -71,7 +71,7 @@ async fn deliver(host: &str, from: &str, to: &str, subject: &str) {
 }
 
 fn inbox() -> ViewQuery {
-    ViewQuery { folder_id: None, unified: Some(UnifiedView::Inbox), filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 200 }
+    ViewQuery { folder_id: None, unified: Some(UnifiedView::Inbox), filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 200, keep_ids: Vec::new() }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

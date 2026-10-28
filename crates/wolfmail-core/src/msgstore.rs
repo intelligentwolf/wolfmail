@@ -271,6 +271,17 @@ fn member_of_roles_excluding(excluded: &str) -> String {
     )
 }
 
+/// `m.seen=0`, or also one of the rows the list is already showing (ViewQuery::keep_ids).
+fn unread_or_kept(keep_ids: &[String], ps: &mut Vec<rusqlite::types::Value>) -> String {
+    let ids: Vec<i64> = keep_ids.iter().filter_map(|id| id.parse().ok()).collect();
+    if ids.is_empty() {
+        return "m.seen=0".into();
+    }
+    let marks = vec!["?"; ids.len()].join(",");
+    ps.extend(ids.into_iter().map(rusqlite::types::Value::Integer));
+    format!("(m.seen=0 OR m.id IN ({marks}))")
+}
+
 /// Build the WHERE clause for a view (folder or unified role) plus filters. Returns (sql, params).
 pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)> {
     use rusqlite::types::Value as V;
@@ -295,10 +306,13 @@ pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)
                     member_of_roles_excluding("'trash','junk','all','flagged'")
                 )),
                 UnifiedView::Snoozed => clauses.push("m.id IN (SELECT message_rowid FROM snoozes)".into()),
-                UnifiedView::Unread => clauses.push(format!(
-                    "m.seen=0 AND {} AND {NOT_IN_TRASH_LABEL}",
-                    member_of_roles_excluding("'trash','junk','all','sent','drafts','flagged'")
-                )),
+                UnifiedView::Unread => {
+                    let unread = unread_or_kept(&q.keep_ids, &mut ps);
+                    clauses.push(format!(
+                        "{unread} AND {} AND {NOT_IN_TRASH_LABEL}",
+                        member_of_roles_excluding("'trash','junk','all','sent','drafts','flagged'")
+                    ))
+                }
                 other => {
                     let role = match other {
                         UnifiedView::Inbox => "inbox",
@@ -330,7 +344,8 @@ pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)
     }
     if let Some(f) = &q.filter {
         if f.unread == Some(true) {
-            clauses.push("m.seen=0".into());
+            let unread = unread_or_kept(&q.keep_ids, &mut ps);
+            clauses.push(unread);
         }
         if f.flagged == Some(true) {
             clauses.push("m.flagged=1".into());
@@ -530,7 +545,7 @@ mod tests {
             insert_message(c, &mk(1, hdr("r@x", None, "Plan", 1000), true))?;
             insert_message(c, &mk(2, hdr("c@x", Some("r@x"), "Re: Plan", 2000), false))?;
             insert_message(c, &mk(3, hdr("o@x", None, "Other", 1500), false))?;
-            let q = ViewQuery { folder_id: Some("1".into()), unified: None, filter: None, search: None, threaded: true, sort: SortOrder::DateDesc, offset: 0, limit: 50 };
+            let q = ViewQuery { folder_id: Some("1".into()), unified: None, filter: None, search: None, threaded: true, sort: SortOrder::DateDesc, offset: 0, limit: 50, keep_ids: Vec::new() };
             let page = list_view(c, &q)?;
             assert_eq!(page.total, 2);
             assert_eq!(page.items[0].subject, "Re: Plan");
@@ -551,6 +566,16 @@ mod tests {
             update_flags(c, 1, 2, &ParsedFlags { flags: Flags { seen: true, ..Default::default() }, ..Default::default() }, None)?;
             let unread = list_view(c, &ViewQuery { filter: Some(ViewFilter { unread: Some(true), ..Default::default() }), threaded: false, ..q.clone() })?;
             assert_eq!(unread.total, 1);
+            // A row the unread list is already showing stays after being read, in the filter and the unified view.
+            let read_id = page.items[0].id.clone();
+            let kept = list_view(c, &ViewQuery { filter: Some(ViewFilter { unread: Some(true), ..Default::default() }), threaded: false, keep_ids: vec![read_id.clone()], ..q.clone() })?;
+            assert_eq!(kept.total, 2);
+            assert!(kept.items.iter().any(|m| m.id == read_id));
+            let kept = list_view(c, &ViewQuery { folder_id: None, unified: Some(UnifiedView::Unread), threaded: false, keep_ids: vec![read_id.clone()], ..q.clone() })?;
+            assert_eq!(kept.total, 2);
+            // keep_ids only widens the unread condition; it never adds rows from outside the view.
+            let inbox = list_view(c, &ViewQuery { threaded: false, keep_ids: vec![read_id], ..q.clone() })?;
+            assert_eq!(inbox.total, 3);
             delete_uid(c, 1, 3)?;
             let flat = list_view(c, &ViewQuery { threaded: false, ..q })?;
             assert_eq!(flat.total, 2);

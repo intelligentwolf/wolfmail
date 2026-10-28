@@ -3,6 +3,7 @@ import * as TooltipPrimitive from "@radix-ui/react-tooltip";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { boot, getState, isOverviewWindow, openComposer, setUi, useStore } from "./lib/store";
@@ -240,6 +241,10 @@ function useDesktopIntegration() {
     };
     window.addEventListener("wm:mailto", onMailto);
     cleanups.push(() => window.removeEventListener("wm:mailto", onMailto));
+    // Links clicked inside a message reach the app as new-window requests (src-tauri lib.rs external_links()).
+    const here = getCurrentWebviewWindow();
+    keep(here.listen<string>("link://mailto", (e) => window.dispatchEvent(new CustomEvent("wm:mailto", { detail: e.payload }))));
+    keep(here.listen<string>("link://failed", (e) => notify.error({ kind: "internal", message: e.payload }, "Couldn't open the link")));
 
     return () => { disposed = true; cleanups.forEach((c) => c()); };
   }, []);

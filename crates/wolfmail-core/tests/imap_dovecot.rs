@@ -74,7 +74,7 @@ async fn full_sync_qresync_flags_expunge_move_idle() {
     let out = sync_folder(&mut conn, &store, &ctx, &inbox).await.unwrap();
     assert!(out.changed);
     assert!(out.new_ids.is_empty(), "first sync is not 'new mail'");
-    let q = ViewQuery { folder_id: Some(inbox.id.to_string()), unified: None, filter: None, search: None, threaded: true, sort: SortOrder::DateDesc, offset: 0, limit: 50 };
+    let q = ViewQuery { folder_id: Some(inbox.id.to_string()), unified: None, filter: None, search: None, threaded: true, sort: SortOrder::DateDesc, offset: 0, limit: 50, keep_ids: Vec::new() };
     let page = store.with(|c| msgstore::list_view(c, &q)).unwrap();
     assert_eq!(page.total, 2, "Plan + Re: Plan form one thread");
     let cached: i64 = store.with(|c| Ok(c.query_row("SELECT COUNT(*) FROM messages WHERE body_cached=1", [], |r| r.get(0))?)).unwrap();

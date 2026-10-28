@@ -39,7 +39,7 @@ where
 }
 
 fn inbox_query() -> ViewQuery {
-    ViewQuery { folder_id: None, unified: Some(UnifiedView::Inbox), filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 100 }
+    ViewQuery { folder_id: None, unified: Some(UnifiedView::Inbox), filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 100, keep_ids: Vec::new() }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

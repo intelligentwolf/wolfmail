@@ -46,10 +46,10 @@ where
 }
 
 fn q_inbox() -> ViewQuery {
-    ViewQuery { folder_id: None, unified: Some(UnifiedView::Inbox), filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 100 }
+    ViewQuery { folder_id: None, unified: Some(UnifiedView::Inbox), filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 100, keep_ids: Vec::new() }
 }
 fn q_folder(id: &str) -> ViewQuery {
-    ViewQuery { folder_id: Some(id.into()), unified: None, filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 100 }
+    ViewQuery { folder_id: Some(id.into()), unified: None, filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 100, keep_ids: Vec::new() }
 }
 
 fn raw_mime(subject: &str, mid: &str) -> String {

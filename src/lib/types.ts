@@ -59,6 +59,8 @@ export type ViewFilter = { unread?: boolean; flagged?: boolean; attachments?: bo
 export type ViewQuery = {
   folderId?: string; unified?: UnifiedView; filter?: ViewFilter; search?: string;
   threaded: boolean; sort: "dateDesc" | "dateAsc"; offset: number; limit: number;
+  /** Unread-only lists: rows already on screen that stay listed after being read (engine ViewQuery.keep_ids). */
+  keepIds?: string[];
 };
 export type MessagePage = { total: number; items: MessageSummary[] };
 

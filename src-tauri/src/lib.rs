@@ -62,6 +62,30 @@ impl EventSink for TauriSink {
     }
 }
 
+/// Links in a message open outside WolfMail. The message frame is sandboxed with scripts off, and WebKit runs no
+/// event listeners in such a frame (not even the parent's), so a click handler there never fired on Linux (Paul,
+/// 28 Oct 2026: clicking a link did nothing). Instead the frame's `<base target="_blank">` turns every link into a
+/// new-window request, handled here on every platform: web links go to the default browser, `mailto:` to the
+/// composer of the window that asked, anything else is refused. WolfMail itself never opens a second webview this way.
+fn external_links(app: &AppHandle, label: &'static str) -> impl Fn(tauri::Url, tauri::webview::NewWindowFeatures) -> tauri::webview::NewWindowResponse<tauri::Wry> + Send + 'static {
+    let app = app.clone();
+    move |url, _features| {
+        match url.scheme() {
+            "http" | "https" => {
+                if let Err(e) = app.opener().open_url(url.as_str(), None::<&str>) {
+                    tracing::warn!("could not open link: {e}");
+                    let _ = app.emit_to(label, "link://failed", format!("Couldn't open {url} in your web browser: {e}"));
+                }
+            }
+            "mailto" => {
+                let _ = app.emit_to(label, "link://mailto", url.as_str());
+            }
+            other => tracing::debug!("refused a {other}: link from a message"),
+        }
+        tauri::webview::NewWindowResponse::Deny
+    }
+}
+
 /// The "all inboxes at once" window: a second webview on the same engine. Every engine event is emitted to all
 /// windows (`Emitter::emit`), so it stays live without its own sync. Opening it again just focuses it.
 fn show_overview(app: &AppHandle) -> tauri::Result<()> {
@@ -75,6 +99,7 @@ fn show_overview(app: &AppHandle) -> tauri::Result<()> {
         .title("WolfMail — All inboxes")
         .inner_size(1500.0, 900.0)
         .min_inner_size(700.0, 480.0)
+        .on_new_window(external_links(app, "overview"))
         .build()?;
     Ok(())
 }
@@ -517,6 +542,10 @@ pub fn run() {
                     tracing::warn!("no system tray: {e}");
                     close_to_tray.store(false, Ordering::Relaxed);
                 }
+            }
+            // "create": false in tauri.conf.json — built here so it gets the link handler.
+            if let Some(main_cfg) = app.config().app.windows.iter().find(|w| w.label == "main") {
+                tauri::WebviewWindowBuilder::from_config(&handle, main_cfg)?.on_new_window(external_links(&handle, "main")).build()?;
             }
             if let Some(w) = app.get_webview_window("main") {
                 let ctt = Arc::clone(&close_to_tray);

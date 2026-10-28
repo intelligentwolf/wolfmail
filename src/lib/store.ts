@@ -163,6 +163,13 @@ export async function refreshFolders() {
 
 // ── list ────────────────────────────────────────────────────────────────────
 let listSeq = 0;
+/** In an unread-only list the rows on screen stay put after they're read, so opening or selecting one doesn't make
+ *  it vanish (Paul, 28 Oct 2026: selecting in Unread kept "refreshing" as each click marked a row read). A fresh
+ *  load — new view, filter or search — starts from unread rows again. */
+function keepIds(s: State, refresh: boolean): string[] | undefined {
+  const unreadOnly = (s.view.kind === "unified" && s.view.unified === "unread") || !!s.filter.unread;
+  return refresh && unreadOnly ? s.list.items.map((m) => m.id) : undefined;
+}
 export async function reloadList(opts: { keepSelection?: boolean } = {}) {
   const seq = ++listSeq;
   const s = state;
@@ -180,6 +187,7 @@ export async function reloadList(opts: { keepSelection?: boolean } = {}) {
       sort: "dateDesc",
       offset: 0,
       limit: Math.max(PAGE, opts.keepSelection ? state.list.items.length : 0),
+      keepIds: keepIds(s, !!opts.keepSelection),
     });
     if (seq !== listSeq) return;
     const ids = new Set(page.items.map((m) => m.id));
@@ -206,7 +214,7 @@ export async function loadMore() {
     const page = await api.messagesList({
       ...viewSource(s.view),
       filter: s.filter, search: s.search.trim() || undefined, threaded: s.settings?.threaded ?? true,
-      sort: "dateDesc", offset: s.list.items.length, limit: PAGE,
+      sort: "dateDesc", offset: s.list.items.length, limit: PAGE, keepIds: keepIds(s, true),
     });
     if (seq !== listSeq) return;
     setState((st) => ({ list: { ...st.list, items: [...st.list.items, ...page.items], total: page.total } }));

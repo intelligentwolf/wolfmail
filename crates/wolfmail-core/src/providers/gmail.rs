@@ -787,13 +787,13 @@ mod tests {
             assert_eq!(am.ext_thread.as_deref(), Some("gt:18c0"));
             let (row, inserted) = store::upsert_message(c, "g", am, 1)?;
             assert!(inserted);
-            let q = |fid: i64| ViewQuery { folder_id: Some(fid.to_string()), unified: None, filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 10 };
+            let q = |fid: i64| ViewQuery { folder_id: Some(fid.to_string()), unified: None, filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 10, keep_ids: Vec::new() };
             assert_eq!(crate::msgstore::list_view(c, &q(map["INBOX"]))?.total, 1);
             assert_eq!(crate::msgstore::list_view(c, &q(map["Label_1"]))?.total, 1);
             assert_eq!(crate::msgstore::list_view(c, &q(all))?.total, 1);
             let n: i64 = c.query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))?;
             assert_eq!(n, 1, "one row, however many labels");
-            let unified = ViewQuery { folder_id: None, unified: Some(UnifiedView::Unread), filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 10 };
+            let unified = ViewQuery { folder_id: None, unified: Some(UnifiedView::Unread), filter: None, search: None, threaded: false, sort: SortOrder::DateDesc, offset: 0, limit: 10, keep_ids: Vec::new() };
             assert_eq!(crate::msgstore::list_view(c, &unified)?.total, 1);
             // Trashed: Gmail keeps the user label but the message disappears from it, from All Mail and Unread.
             apply_label_ids(c, row, &["TRASH".into(), "UNREAD".into(), "Label_1".into()], &map, &names)?;

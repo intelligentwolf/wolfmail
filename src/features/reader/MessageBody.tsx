@@ -1,13 +1,13 @@
 import * as React from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { notify } from "../../lib/notify";
 import { escapeHtml } from "../../lib/utils";
 
 // The engine has already sanitised the HTML (ammonia: no scripts, forms, handlers; remote resources stripped unless
 // the user allowed them). This is the second wall: a sandboxed iframe with NO allow-scripts, plus a CSP meta that
 // forbids everything except inline styles and data:/blob: images (and https: images only when remote content was
-// explicitly loaded). `allow-same-origin` without `allow-scripts` lets us measure the height and catch link clicks
-// from the parent while the message itself still cannot run anything.
+// explicitly loaded). `allow-same-origin` without `allow-scripts` lets us measure the height while the message itself
+// still cannot run anything. Links: `<base target="_blank">` makes each click a new-window request, which the app
+// opens in the browser (or the composer, for mailto:) — src-tauri/src/lib.rs external_links(). WebKit runs no event
+// listeners inside a script-less frame, so a click handler here would never fire.
 
 function frameDoc(inner: string, opts: { remote: boolean; plain: boolean; dark: boolean }) {
   const img = opts.remote ? "data: blob: https:" : "data: blob:";
@@ -69,19 +69,6 @@ export function MessageBody({ html, text, plainText, remote, dark }: { html?: st
     ro.observe(d.body);
     // Images finishing late change the height.
     d.querySelectorAll("img").forEach((img) => img.addEventListener("load", measure, { once: true }));
-    d.addEventListener("click", (e) => {
-      const a = (e.target as HTMLElement | null)?.closest?.("a");
-      if (!a) return;
-      e.preventDefault();
-      const href = a.getAttribute("href") || "";
-      if (/^(https?:|mailto:)/i.test(href)) {
-        if (href.toLowerCase().startsWith("mailto:")) {
-          window.dispatchEvent(new CustomEvent("wm:mailto", { detail: href }));
-        } else {
-          openUrl(href).catch((err) => notify.error(err, "Couldn't open the link"));
-        }
-      }
-    });
     f.addEventListener("unload", () => ro.disconnect(), { once: true });
   }, []);
 

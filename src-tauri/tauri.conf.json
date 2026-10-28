@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "WolfMail",
         "width": 1360,
         "height": 860,
