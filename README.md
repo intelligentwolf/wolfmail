@@ -20,10 +20,29 @@ own computer, and gets out of your way. Free and open source.
   `from:` `subject:` `has:attachment` `is:unread` `after:` `before:`, snooze, filters, tags and undo send.
 - **Calendar and contacts** alongside your mail.
 
+## What is IntelligentWolf?
+
+**[IntelligentWolf](https://intelligentwolf.com) — an AI team for your business. You just ask.**
+
+New leads, every enquiry answered, social media and your website. Just ask Alex — nothing goes out without your yes.
+
+IntelligentWolf gives your business a team of AI staff, led by **Alex**, working on your business's *floor*: finding
+and following up leads, answering enquiries, keeping your customers and pipeline in one CRM, running your social media
+and your website, booking pages and business email. You tell Alex what you want in plain English; the staff do the
+work, and you approve what goes out.
+
+| Plan | Who it's for |
+|---|---|
+| **Solo** | Just you, unlimited floors. The staff work; you approve. |
+| **Consultant** | Up to 5 people, unlimited floors — run your own business and your clients' from one place. |
+| **Team** | A whole team together — shared pipeline, shared staff, one bill. |
+| **Enterprise** | Custom contract. SSO, SLAs, bespoke integrations. |
+
+Prices and sign-up: **[intelligentwolf.com](https://intelligentwolf.com)**.
+
 ## Better with IntelligentWolf
 
-[**IntelligentWolf**](https://intelligentwolf.com) is an AI team for your business. You just ask. Connect it and
-WolfMail becomes the front desk of your business:
+Connect your IntelligentWolf account and WolfMail becomes the front desk of your business:
 
 - **Your customers, highlighted** — emails from your leads and contacts are marked in the list, with their record,
   pipeline stage and history beside every email.
