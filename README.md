@@ -1,5 +1,7 @@
 # WolfMail
 
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-%E2%9D%A4-red?style=for-the-badge&logo=github)](https://github.com/sponsors/intelligentwolf)
+
 **A fast, private desktop email client for all your accounts — Windows, macOS and Linux.**
 
 WolfMail puts every inbox you have — Gmail, Outlook, and any IMAP mailbox — in one window, keeps your mail on your
@@ -76,6 +78,11 @@ Signing in with Google or Microsoft needs your own OAuth client IDs at build tim
 build and offers an app password instead. IMAP accounts work as normal. Tests: `cargo test --workspace` and `npx tsc --noEmit`.
 
 The app's engine ↔ interface contract is in [docs/API.md](docs/API.md).
+
+## Support WolfMail
+
+WolfMail is free. If it's useful to you, sponsoring funds its development:
+[github.com/sponsors/intelligentwolf](https://github.com/sponsors/intelligentwolf).
 
 ## Contributing
 
