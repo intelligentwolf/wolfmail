@@ -112,6 +112,36 @@ struct TokenResponse {
     refresh_token: Option<String>,
     #[serde(default)]
     id_token: Option<String>,
+    /// Space-separated scopes actually granted (RFC 6749 §5.1). Google's consent screen lets the user untick
+    /// individual permissions ("granular consent"), so this can be fewer than requested.
+    #[serde(default)]
+    scope: Option<String>,
+}
+
+/// Google scopes that were requested but not granted. Only Google URL scopes are compared (openid/email come back
+/// as their own URL forms and are not needed for mail to work). Microsoft returns scopes in a different spelling
+/// and has no per-scope tickboxes, so it is not checked here.
+fn missing_google_scopes(requested: &str, granted: Option<&str>) -> Vec<String> {
+    let Some(granted) = granted else { return Vec::new() };
+    let have: std::collections::HashSet<&str> = granted.split_whitespace().collect();
+    requested
+        .split_whitespace()
+        .filter(|s| s.starts_with("https://www.googleapis.com/auth/"))
+        .filter(|s| !have.contains(s))
+        .map(|s| s.to_string())
+        .collect()
+}
+
+fn google_scope_words(scope: &str) -> &'static str {
+    match scope.rsplit('/').next().unwrap_or(scope) {
+        "gmail.modify" => "Read, compose and send emails / manage your mail",
+        "gmail.send" => "Send email on your behalf",
+        "gmail.settings.basic" => "See, edit, create and change your email settings",
+        "calendar" => "See, edit, share and delete your calendars",
+        "contacts.readonly" => "See and download your contacts",
+        "contacts.other.readonly" => "See and download contact info automatically saved in your \"Other contacts\"",
+        _ => "one of the permissions WolfMail asked for",
+    }
 }
 
 #[derive(Deserialize)]
@@ -317,6 +347,16 @@ pub async fn authorize_scoped(
         form.push(("client_secret", s.to_string()));
     }
     let tok = token_request(http, c.token_url, &form).await?;
+    if provider == OAuthProvider::Google {
+        let missing = missing_google_scopes(scopes, tok.scope.as_deref());
+        if !missing.is_empty() {
+            let list: Vec<&str> = missing.iter().map(|m| google_scope_words(m)).collect();
+            return Err(ApiError::auth(format!(
+                "Google signed you in, but these boxes were left unticked on its permission screen: {}. Sign in again and tick every box — WolfMail can't work without them.",
+                list.join("; ")
+            )));
+        }
+    }
     let refresh = tok
         .refresh_token
         .clone()
@@ -398,6 +438,20 @@ pub async fn access_token_scoped(
     }
     secrets.set(&key, &serde_json::to_string(&st)?)?;
     Ok(st.access_token)
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+    #[test]
+    fn detects_unticked_google_scopes() {
+        let req = "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send openid email";
+        let partial = "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/gmail.send";
+        assert_eq!(missing_google_scopes(req, Some(partial)), vec!["https://www.googleapis.com/auth/gmail.modify".to_string()]);
+        let full = "https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.modify openid";
+        assert!(missing_google_scopes(req, Some(full)).is_empty());
+        assert!(missing_google_scopes(req, None).is_empty(), "no scope field: nothing to compare");
+    }
 }
 
 #[cfg(test)]
