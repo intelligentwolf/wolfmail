@@ -210,7 +210,7 @@ export function TimeGrid({ days, items }: { days: number[]; items: Occurrence[] 
                 key={day}
                 data-day={day}
                 onPointerDown={(e) => onColumnDown(e, day)}
-                className={cn("relative border-l border-border", isToday && "bg-[var(--iw-red-wash)]")}
+                className={cn("relative border-l border-border", isToday && "bg-[var(--wm-today-wash)]")}
                 style={{
                   backgroundImage: "linear-gradient(to bottom, var(--border) 1px, transparent 1px)",
                   backgroundSize: `100% ${HOUR}px`,

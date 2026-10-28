@@ -17,7 +17,7 @@ const MODES: { m: Mode; label: string; icon: React.ComponentType<{ className?: s
 export function ModeSwitch() {
   const mode = usePim((s) => s.mode);
   return (
-    <div role="tablist" aria-label="Switch between mail, calendar and contacts" className="mx-3 mb-3 grid grid-cols-3 rounded-control bg-surface-inset p-0.5 ring-1 ring-border">
+    <div role="tablist" aria-label="Switch between mail, calendar and contacts" className="@container mx-3 mb-3 grid grid-cols-3 rounded-control bg-surface-inset p-0.5 ring-1 ring-border">
       {MODES.map(({ m, label, icon: Icon, key }) => (
         <TooltipPrimitive.Root key={m} delayDuration={350}>
           <TooltipPrimitive.Trigger asChild>
@@ -27,12 +27,13 @@ export function ModeSwitch() {
               aria-selected={mode === m}
               aria-keyshortcuts={`Control+${key}`}
               onClick={() => setMode(m)}
-              className={cn("flex h-8 items-center justify-center gap-1.5 rounded-[6px] text-[12.5px] font-medium transition-colors",
+              className={cn("flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-[6px] px-1 text-[12.5px] font-medium transition-colors",
                 mode === m ? "bg-surface text-foreground shadow-theme-xs" : "text-muted-foreground hover:text-foreground")}
             >
               <Icon className={cn("size-4", mode === m && "text-[var(--iw-red-text)]")} />
-              <span className="hidden xl:inline">{label}</span>
-              <span className="sr-only xl:hidden">{label}</span>
+              {/* Labels follow the sidebar's own width (it is resizable), not the window's. */}
+              <span className="hidden truncate @[18.5rem]:inline">{label}</span>
+              <span className="sr-only @[18.5rem]:hidden">{label}</span>
             </button>
           </TooltipPrimitive.Trigger>
           <TooltipPrimitive.Portal>

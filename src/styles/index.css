@@ -26,6 +26,8 @@
   /* Red used as TEXT (dates, links, errors). Measured WCAG contrast: #c41e1e is 5.91:1 on white but 2.25:1 on the
      dark surface #2e2f37, so dark mode gets #ff7a7a (5.27:1 on #2e2f37, 4.62:1 on #37383f). Fills keep --iw-red. */
   --iw-red-text: #c41e1e;
+  /* Today's column in the calendar: a hint, not a highlight (the red wash read as a selected block). */
+  --wm-today-wash: rgba(196, 30, 30, 0.035);
   /* Same idea for amber and green text: #c9a24b is 2.4:1 on white, #15803d is 2.65:1 on #2e2f37 (measured). */
   --iw-warn-text: #8a6416;  /* 5.36:1 on white, 4.76:1 on #f6f1e7 */
   --iw-go-text: #166534;
@@ -79,6 +81,7 @@
   --iw-red-hover: #d93636;
   --iw-red-wash: rgba(196, 30, 30, 0.16);
   --iw-red-text: #ff7a7a;
+  --wm-today-wash: rgba(196, 30, 30, 0.07);
   --iw-warn-text: #c9a24b;  /* 5.55:1 on #2e2f37 */
   --iw-go-text: #4ade80;    /* 7.64:1 on #2e2f37 */
   --iw-plum: #4b4c53;

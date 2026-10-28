@@ -214,7 +214,7 @@ function LabeledList({ id, label, items, onChange, placeholder, type }: {
       <legend className="mb-1 text-[13px] font-medium">{label}</legend>
       {items.map((it, i) => (
         <div key={i} className="flex gap-2">
-          <NativeSelect value={LABELS.includes(it.label) ? it.label : "other"} onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} className="w-28" aria-label={`${label} ${i + 1} type`}>
+          <NativeSelect value={LABELS.includes(it.label) ? it.label : "other"} onChange={(e) => onChange(items.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} className="w-28 shrink-0" aria-label={`${label} ${i + 1} type`}>
             {LABELS.map((l) => <option key={l} value={l}>{l}</option>)}
           </NativeSelect>
           <Input id={i === 0 ? id : undefined} type={type} value={it.value} placeholder={placeholder} aria-label={`${label} ${i + 1}`}
@@ -222,7 +222,7 @@ function LabeledList({ id, label, items, onChange, placeholder, type }: {
           <IconButton label={`Remove ${label.toLowerCase()} ${i + 1}`} onClick={() => onChange(items.filter((_, j) => j !== i))}><X /></IconButton>
         </div>
       ))}
-      <Button variant="ghost" size="sm" onClick={() => onChange([...items, { label: "work", value: "" }])}><Plus /> Add {label.toLowerCase().replace(/s$/, "")}</Button>
+      <Button variant="ghost" size="sm" onClick={() => onChange([...items, { label: "work", value: "" }])}><Plus /> Add {({ Emails: "email", Phones: "phone", Addresses: "address" } as Record<string, string>)[label] ?? label.toLowerCase()}</Button>
     </fieldset>
   );
 }
