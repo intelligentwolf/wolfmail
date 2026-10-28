@@ -15,6 +15,25 @@ function targets(ids?: string[]): MessageSummary[] {
   return selectedMessages();
 }
 
+/** In conversation view a row stands for its whole thread, but its id is only the newest message. Acting on that
+ *  one id left the rest of the conversation behind, so a deleted row "came back" showing the next message (Paul,
+ *  28 Oct 2026). Expand each multi-message row to the thread's messages in the same folder (for Gmail, where one
+ *  row per message lives in All Mail, that is the whole conversation — Gmail's own behaviour). */
+async function conversationIds(rows: MessageSummary[]): Promise<string[]> {
+  const ids = new Set(rows.map((r) => r.id));
+  await Promise.all(
+    rows.filter((r) => r.threadCount > 1).map(async (r) => {
+      try {
+        const members = await api.threadGet(r.threadId, r.accountId);
+        for (const m of members) if (m.folderId === r.folderId) ids.add(m.id);
+      } catch {
+        // Fall back to the row itself; the action still runs and the list reload shows the truth.
+      }
+    }),
+  );
+  return [...ids];
+}
+
 async function guarded(label: string, fn: () => Promise<unknown>) {
   try {
     await fn();
@@ -27,31 +46,31 @@ async function guarded(label: string, fn: () => Promise<unknown>) {
 }
 
 export async function archive(ids?: string[]) {
-  const t = targets(ids).map((m) => m.id);
-  if (!t.length) return;
-  removeRowsLocally(t);
-  await guarded("Couldn't archive", () => api.archive(t));
+  const rows = targets(ids);
+  if (!rows.length) return;
+  removeRowsLocally(rows.map((m) => m.id));
+  await guarded("Couldn't archive", async () => { const all = await conversationIds(rows); await api.archive(all); });
 }
 
 export async function trash(ids?: string[]) {
-  const t = targets(ids).map((m) => m.id);
-  if (!t.length) return;
-  removeRowsLocally(t);
-  await guarded("Couldn't delete", () => api.trash(t));
+  const rows = targets(ids);
+  if (!rows.length) return;
+  removeRowsLocally(rows.map((m) => m.id));
+  await guarded("Couldn't delete", async () => { const all = await conversationIds(rows); await api.trash(all); });
 }
 
 export async function junk(isJunk: boolean, ids?: string[]) {
-  const t = targets(ids).map((m) => m.id);
-  if (!t.length) return;
-  removeRowsLocally(t);
-  await guarded(isJunk ? "Couldn't mark as junk" : "Couldn't mark as not junk", () => api.junk(t, isJunk));
+  const rows = targets(ids);
+  if (!rows.length) return;
+  removeRowsLocally(rows.map((m) => m.id));
+  await guarded(isJunk ? "Couldn't mark as junk" : "Couldn't mark as not junk", async () => api.junk(await conversationIds(rows), isJunk));
 }
 
 export async function moveTo(folderId: string, ids?: string[]) {
-  const t = targets(ids).map((m) => m.id);
-  if (!t.length) return;
-  removeRowsLocally(t);
-  await guarded("Couldn't move", () => api.move(t, folderId));
+  const rows = targets(ids);
+  if (!rows.length) return;
+  removeRowsLocally(rows.map((m) => m.id));
+  await guarded("Couldn't move", async () => api.move(await conversationIds(rows), folderId));
 }
 
 export async function copyTo(folderId: string, ids?: string[]) {
@@ -66,10 +85,14 @@ export async function copyTo(folderId: string, ids?: string[]) {
 export async function setRead(read: boolean, ids?: string[]) {
   const t = targets(ids);
   if (!t.length) return;
-  const changed = t.filter((m) => m.flags.seen !== read).map((m) => m.id);
+  // A conversation counts as unread while any message in it is (threadUnread), not just its newest one.
+  const changed = t.filter((m) => (read ? !m.flags.seen || m.threadUnread > 0 : m.flags.seen)).map((m) => m.id);
   if (!changed.length) return;
   patchRows(changed, (m) => ({ ...m, flags: { ...m.flags, seen: read }, threadUnread: read ? 0 : Math.max(1, m.threadUnread) }));
-  await guarded("Couldn't change read status", () => (read ? api.setFlags(changed, ["seen"], []) : api.setFlags(changed, [], ["seen"])));
+  // Marking a conversation read covers its unread older messages too; marking unread only needs the newest.
+  const rowsChanged = t.filter((m) => changed.includes(m.id));
+  await guarded("Couldn't change read status", async () =>
+    read ? api.setFlags(await conversationIds(rowsChanged), ["seen"], []) : api.setFlags(changed, [], ["seen"]));
 }
 
 export async function toggleRead(ids?: string[]) {
@@ -146,10 +169,11 @@ export function openSettings(section = "general") { setUi({ settings: section })
 
 /** Snooze: hidden until `until`, then back unread with a notification. Kept on this computer only. */
 export async function snooze(until: number, ids?: string[]) {
-  const t = targets(ids).map((m) => m.id);
-  if (!t.length) return;
-  removeRowsLocally(t);
+  const rows = targets(ids);
+  if (!rows.length) return;
+  removeRowsLocally(rows.map((m) => m.id));
   try {
+    const t = await conversationIds(rows);
     await api.snooze(t, until);
     notify.ok(`Snoozed until ${new Date(until).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`, {
       action: { label: "Undo", onClick: () => { api.unsnooze(t).then(() => reloadList({ keepSelection: true })).catch((e) => notify.error(e, "Couldn't un-snooze")); } },
@@ -163,8 +187,8 @@ export async function snooze(until: number, ids?: string[]) {
 }
 
 export async function unsnooze(ids?: string[]) {
-  const t = targets(ids).map((m) => m.id);
-  if (!t.length) return;
-  removeRowsLocally(t);
-  await guarded("Couldn't un-snooze", () => api.unsnooze(t));
+  const rows = targets(ids);
+  if (!rows.length) return;
+  removeRowsLocally(rows.map((m) => m.id));
+  await guarded("Couldn't un-snooze", async () => api.unsnooze(await conversationIds(rows)));
 }
