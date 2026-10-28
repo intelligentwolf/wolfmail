@@ -1,6 +1,6 @@
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
-import { getState, moveCursor, openComposer, selectAll, setUi, setView, setState } from "../lib/store";
+import { getState, moveCursor, openComposer, selectAll, setUi, setView, setState, undoLast } from "../lib/store";
 import { modKey } from "../lib/utils";
 import { modalOpen } from "../lib/dom";
 import * as A from "./actions";
@@ -35,6 +35,7 @@ export const SHORTCUTS: { keys: string; label: string; group: string }[] = [
   { group: "Act", keys: "1 – 9", label: "Toggle tag 1–9" },
   { group: "Act", keys: "V", label: "Move to folder (palette)" },
   { group: "Act", keys: `${modKey}+A`, label: "Select all in view" },
+  { group: "Act", keys: `${modKey}+Z`, label: "Undo the last move or delete (again for the one before)" },
   { group: "App", keys: "F5", label: "Check for new mail" },
   { group: "App", keys: "I", label: "Show / hide the IntelligentWolf panel" },
   { group: "App", keys: `${modKey}+,`, label: "Settings" },
@@ -79,6 +80,8 @@ export function installShortcuts(): () => void {
       if (lk === "r") { e.preventDefault(); void A.reply(false); return; }
       if (lk === "l") { e.preventDefault(); void A.forward(); return; }
       if (lk === "a") { e.preventDefault(); selectAll(); return; }
+      // Outside text fields (they keep their own undo): take back the latest move or delete.
+      if (lk === "z" && !e.shiftKey) { e.preventDefault(); void undoLast(); return; }
       return;
     }
     if (e.altKey) return;

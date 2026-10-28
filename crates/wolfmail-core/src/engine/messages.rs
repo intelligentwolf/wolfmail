@@ -1,7 +1,7 @@
 //! Message commands: list, read, flags, tags, move/copy/archive/trash/junk + undo, attachments, search,
 //! contact suggestions, unsubscribe.
 // Source: docs/API.md commands messages_* / message_* / thread_get / attachment_* / search / contacts_suggest /
-// unsubscribe, and the `undoable` event (token valid 10 s).
+// unsubscribe, and the `undoable` event (token valid 5 minutes).
 use super::accounts::folder_with_role;
 use super::apiops::{ApiGroup, ApiUndo};
 use super::{Engine, UndoEntry, UndoMove};
@@ -14,7 +14,10 @@ use crate::msgstore;
 use rusqlite::{params, params_from_iter, OptionalExtension};
 use std::collections::BTreeMap;
 
-const UNDO_MS: i64 = 10_000;
+/// How long a move/delete can be taken back (Ctrl/⌘+Z or the menus; no toast since 28 Oct 2026 — Paul: "if they want
+/// to undo they can do ctrl z or use the menu"). Undo moves the messages back on the server, so it does not depend on
+/// a short window; five minutes covers "oops" without promising forever.
+const UNDO_MS: i64 = 300_000;
 
 struct Group {
     account_id: String,

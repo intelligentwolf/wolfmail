@@ -157,7 +157,7 @@ type ImportCandidate = {
 | `messages_archive` | `{ ids }` | `null` (moves to the account's archive role folder; creates "Archive" if none) |
 | `messages_trash` | `{ ids }` | `null` (to Trash; from Trash = permanent delete) |
 | `messages_junk` | `{ ids, junk: boolean }` | `null` |
-| `messages_undo` | `{ token }` | `null` (every move/trash/archive returns via event `undoable` a token valid 10 s) |
+| `messages_undo` | `{ token }` | `null` (every move/trash/archive returns via event `undoable` a token valid 5 minutes; the UI keeps them for Ctrl/⌘+Z and the menus — no toast) |
 | `attachment_save` | `{ messageId, attachmentId, path }` | `null` |
 | `attachment_open` | `{ messageId, attachmentId }` | `null` (writes to app cache dir, opens with system handler) |
 | `draft_save` | `DraftInput` | `{ id, serverSaved, serverError? }` — always stored locally first; `serverSaved=false` (with the reason) when the APPEND to the server's Drafts folder failed — the local copy is safe and the next save retries. The new server copy replaces the previous one. |

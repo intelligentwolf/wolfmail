@@ -2,7 +2,7 @@ import * as React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive, Trash2, Star, Paperclip, MailOpen, Mail, Search, X, Inbox, SearchX, AlertTriangle, CornerUpLeft, Forward,
-  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus, Sparkles,
+  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus, Sparkles, Undo2,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "../../lib/notify";
@@ -11,11 +11,11 @@ import { invalidatePeople, lookupPeople, otherParty, useIwMatch, useMyAddresses 
 import { api } from "../../lib/api";
 import { IW_ENABLED } from "../../lib/features";
 import {
-  useStore, getState, selectRow, loadMore, setFilter, setSearch, reloadList, selectAll, folderById, accountById,
+  useStore, getState, selectRow, loadMore, setFilter, setSearch, reloadList, selectAll, folderById, accountById, undoLast,
 } from "../../lib/store";
 import type { MessageSummary, ViewFilter } from "../../lib/types";
 import { format } from "date-fns";
-import { cn, displayName, listDate } from "../../lib/utils";
+import { cn, displayName, listDate, modKey } from "../../lib/utils";
 import { Avatar, Ctx, EmptyState, Skeleton, Menu } from "../../components/ui/misc";
 import { Button, IconButton } from "../../components/ui/button";
 import * as A from "../actions";
@@ -437,11 +437,13 @@ function IwBadge({ match }: { match: IwMatch }) {
 function RowMenu({ m, isDraft, iwMatch }: { m: MessageSummary; isDraft: boolean; iwMatch: IwMatch | null | undefined }) {
   const tags = useStore((s) => s.tags);
   const iwConnected = useStore((s) => !!s.iw?.connected);
+  const lastUndo = useStore((s) => s.lastUndo);
   const mine = useMyAddresses();
   const person = otherParty(m, mine);
   const unread = !m.flags.seen;
   return (
     <Ctx.Content>
+      {lastUndo && <><Ctx.Item shortcut={`${modKey}+Z`} onSelect={() => void undoLast()}><Undo2 /> Undo: {lastUndo}</Ctx.Item><Ctx.Separator /></>}
       {isDraft && <Ctx.Item onSelect={() => A.editDraft(m.id)}>Edit draft</Ctx.Item>}
       <Ctx.Item shortcut="R" onSelect={() => A.reply(false, m.id)}><CornerUpLeft /> Reply</Ctx.Item>
       <Ctx.Item shortcut="Shift+R" onSelect={() => A.reply(true, m.id)}><CornerUpLeft /> Reply all</Ctx.Item>

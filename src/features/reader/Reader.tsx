@@ -1,13 +1,13 @@
 import * as React from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import {
-  Archive, Trash2, CornerUpLeft, ReplyAll, Forward, Star, MailOpen, ShieldAlert, MoreHorizontal, FolderInput, Tag as TagIcon,
+  Archive, Trash2, CornerUpLeft, ReplyAll, Forward, Star, MailOpen, ShieldAlert, MoreHorizontal, FolderInput, Tag as TagIcon, Undo2,
   Paperclip, Download, ExternalLink, ImageOff, ShieldCheck, Code, BellOff, ChevronDown, Mail, PanelRightOpen, PanelRightClose,
   FileText, FileImage, FileArchive, FileSpreadsheet, Maximize2, Minimize2, AlarmClock, AlarmClockOff,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
-import { selectOpenRow, useStore, patchRows, accountById, setUi } from "../../lib/store";
+import { selectOpenRow, useStore, patchRows, accountById, setUi, undoLast } from "../../lib/store";
 import type { Attachment, MessageFull, MessageSummary } from "../../lib/types";
 import { bytes, cn, displayName, formatAddress, fullDate, listDate } from "../../lib/utils";
 import { Avatar, EmptyState, Menu, Skeleton, Spinner } from "../../components/ui/misc";
@@ -102,6 +102,7 @@ function Toolbar({ row, latestId, maximized, onToggleMax, iwPanel, iwConnected }
   row: MessageSummary; latestId: string; maximized: boolean; onToggleMax: () => void; iwPanel: boolean; iwConnected: boolean;
 }) {
   const tags = useStore((s) => s.tags);
+  const lastUndo = useStore((s) => s.lastUndo);
   const [source, setSource] = React.useState<string | null>(null);
   return (
     <div role="toolbar" aria-label="Message actions" className="flex items-center gap-0.5 border-b border-border px-3 py-2">
@@ -142,6 +143,7 @@ function Toolbar({ row, latestId, maximized, onToggleMax, iwPanel, iwConnected }
       <Menu.Root>
         <IconButtonTrigger label="More"><MoreHorizontal /></IconButtonTrigger>
         <Menu.Content align="end">
+          {lastUndo && <Menu.Item onSelect={() => void undoLast()}><Undo2 /> Undo: {lastUndo}</Menu.Item>}
           <Menu.Item onSelect={() => api.messageRaw(latestId).then(setSource).catch((e) => notify.error(e, "Couldn't load the source"))}><Code /> View source</Menu.Item>
           <Menu.Item onSelect={() => A.junk(false, [row.id])}><ShieldCheck /> Not junk</Menu.Item>
           <Menu.Sub label="Copy to" icon={<FolderInput />}><MoveMenuItems kind="menu" onPick={(fid) => A.copyTo(fid, [row.id])} /></Menu.Sub>

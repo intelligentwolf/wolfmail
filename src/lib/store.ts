@@ -25,6 +25,8 @@ export type State = {
   settings: Settings | null;
   tags: Tag[];
   iw: IwStatus | null;
+  /** Label of the latest move/delete that Ctrl/⌘+Z would undo, or null (undoLast). */
+  lastUndo: string | null;
   secrets: SecretsStatus | null;
   outbox: OutboxItem[];
   sync: Record<string, { status: AccountStatus; message?: string; progress?: { done: number; total: number } }>;
@@ -63,6 +65,7 @@ let state: State = {
   settings: null,
   tags: [],
   iw: null,
+  lastUndo: null,
   secrets: null,
   outbox: [],
   sync: {},
@@ -146,12 +149,31 @@ export async function boot() {
     if (item.state === "sent") notify.ok(`Sent “${item.draft.subject || "(no subject)"}”`);
     if (item.state === "failed") notify.error({ kind: "server", message: item.error ?? "The message could not be sent. It is still in the Outbox." }, "Message not sent");
   });
+  // No toast for moves and deletes (Paul, 28 Oct 2026: "get rid of the 'deleted 1 message undo' it makes messages
+  // flicker — if they want to undo they can do ctrl z or use the menu"): the engine's undo tokens are kept here, and
+  // Ctrl/⌘+Z, the command palette and the message menus undo the latest one (undoLast).
   void events.undoable((u) => {
-    notify.info(u.label, {
-      duration: Math.max(1000, u.expiresAt - Date.now()),
-      action: { label: "Undo", onClick: () => { api.undo(u.token).catch((err) => notify.error(err, "Couldn't undo")); } },
-    });
+    const now = Date.now();
+    undoStack = [...undoStack.filter((x) => x.expiresAt > now), u].slice(-UNDO_KEEP);
+    setState({ lastUndo: u.label });
   });
+}
+
+/** Recent undoable moves/deletes (engine `undoable` events), newest last. */
+const UNDO_KEEP = 20;
+let undoStack: { token: string; label: string; expiresAt: number }[] = [];
+
+/** Undo the most recent move or delete that can still be undone. */
+export async function undoLast() {
+  const now = Date.now();
+  undoStack = undoStack.filter((x) => x.expiresAt > now);
+  const u = undoStack.pop();
+  setState({ lastUndo: undoStack.length ? undoStack[undoStack.length - 1].label : null });
+  if (!u) { notify.info("Nothing to undo"); return; }
+  try {
+    await api.undo(u.token);
+    notify.ok(`Undone: ${u.label.charAt(0).toLowerCase()}${u.label.slice(1)}`);
+  } catch (e) { notify.error(e, "Couldn't undo"); }
 }
 
 export async function refreshAccounts() {
