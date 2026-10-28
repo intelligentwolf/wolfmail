@@ -316,6 +316,28 @@ fn tracker_srcs(html: &str) -> HashSet<String> {
     out
 }
 
+/// A remote image address the reader can load. The message frame's CSP allows `https:` images only
+/// (src/features/reader/MessageBody.tsx frameDoc), so — as browsers auto-upgrade mixed-content images — `http://` becomes
+/// `https://`, and a scheme-less `//host/…` (which would resolve against the app's own origin inside the frame) gets
+/// `https:`. Paul, 28 Oct 2026: "Load images" showed nothing on some emails and worked on others.
+fn upgrade_image_url(v: &str) -> Cow<'_, str> {
+    let t = v.trim();
+    if t.len() >= 7 && t[..7].eq_ignore_ascii_case("http://") {
+        Cow::Owned(format!("https://{}", &t[7..]))
+    } else if t.starts_with("//") {
+        Cow::Owned(format!("https:{t}"))
+    } else {
+        Cow::Borrowed(v)
+    }
+}
+
+/// The same upgrade for url(...) in CSS (style blocks and style attributes) when remote content is allowed.
+fn upgrade_css_urls(css: &str) -> String {
+    static URL: OnceLock<Regex> = OnceLock::new();
+    let url = URL.get_or_init(|| Regex::new(r#"(?i)(url\(\s*['"]?\s*)(http:)?//"#).unwrap());
+    url.replace_all(css, "${1}https://").into_owned()
+}
+
 /// Remove remote url(...) and @import from <style> blocks and style attributes when remote content is blocked.
 fn strip_remote_css(css: &str, count: &AtomicUsize) -> String {
     static URL: OnceLock<Regex> = OnceLock::new();
@@ -344,7 +366,7 @@ pub fn sanitize_html(src: &str, allow_remote: bool, cid_map: &HashMap<String, St
     static STYLE: OnceLock<Regex> = OnceLock::new();
     let style_re = STYLE.get_or_init(|| Regex::new(r"(?is)(<style\b[^>]*>)(.*?)(</style>)").unwrap());
     let pre: Cow<str> = if allow_remote {
-        Cow::Borrowed(src)
+        Cow::Owned(style_re.replace_all(src, |c: &regex::Captures| format!("{}{}{}", &c[1], upgrade_css_urls(&c[2]), &c[3])).into_owned())
     } else {
         let b = Arc::clone(&blocked);
         Cow::Owned(
@@ -397,10 +419,10 @@ pub fn sanitize_html(src: &str, allow_remote: bool, cid_map: &HashMap<String, St
                         blocked.fetch_add(1, Ordering::Relaxed);
                         return None;
                     }
-                    Some(Cow::Borrowed(value))
+                    Some(upgrade_image_url(value))
                 }
-                (_, "style") if !allow_remote && value.to_ascii_lowercase().contains("url(") => {
-                    Some(Cow::Owned(strip_remote_css(value, &blocked)))
+                (_, "style") if value.to_ascii_lowercase().contains("url(") => {
+                    Some(Cow::Owned(if allow_remote { upgrade_css_urls(value) } else { strip_remote_css(value, &blocked) }))
                 }
                 _ => Some(Cow::Borrowed(value)),
             }
@@ -560,6 +582,19 @@ Content-Transfer-Encoding: base64\r\n\
 \r\n\
 JVBERi0xLjQK\r\n\
 --b1--\r\n";
+
+    #[test]
+    fn loaded_images_are_upgraded_to_https() {
+        let src = r#"<style>.h{background:url('http://cdn.example/bg.png')}</style><img src="http://cdn.example/a.jpg"><img src="//cdn.example/b.jpg"><img src="https://cdn.example/c.jpg"><table><tr><td style="background:url(http://cdn.example/d.png)" background="http://cdn.example/e.png">x</td></tr></table>"#;
+        let s = sanitize_html(src, true, &HashMap::new());
+        assert!(!s.html.contains("http://"), "{}", s.html);
+        for f in ["https://cdn.example/a.jpg", "https://cdn.example/b.jpg", "https://cdn.example/c.jpg", "url(https://cdn.example/d.png)", "url('https://cdn.example/bg.png')", "https://cdn.example/e.png"] {
+            assert!(s.html.contains(f), "missing {f} in {}", s.html);
+        }
+        // Blocked stays blocked: nothing remote survives, upgraded or not.
+        let b = sanitize_html(src, false, &HashMap::new());
+        assert!(!b.html.contains("cdn.example"), "{}", b.html);
+    }
 
     #[test]
     fn headers_parse() {

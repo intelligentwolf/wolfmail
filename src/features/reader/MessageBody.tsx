@@ -5,7 +5,7 @@ import { escapeHtml } from "../../lib/utils";
 // the user allowed them). This is the second wall: a sandboxed iframe with NO allow-scripts, plus a CSP meta that
 // forbids everything except inline styles and data:/blob: images (and https: images only when remote content was
 // explicitly loaded). `allow-same-origin` without `allow-scripts` lets us measure the height while the message itself
-// still cannot run anything. Links: `<base target="_blank">` makes each click a new-window request, which the app
+// still cannot run anything (the parent measures it, and re-measures while images arrive). Links: `<base target="_blank">` makes each click a new-window request, which the app
 // opens in the browser (or the composer, for mailto:) — src-tauri/src/lib.rs external_links(). WebKit runs no event
 // listeners inside a script-less frame, so a click handler here would never fire.
 
@@ -51,7 +51,12 @@ export function MessageBody({ html, text, plainText, remote, dark }: { html?: st
     [html, text, remote, plain, dark],
   );
 
+  // Stops the image watch below when the frame reloads or the reader unmounts.
+  const stopWatch = React.useRef<() => void>(() => {});
+  React.useEffect(() => () => stopWatch.current(), []);
+
   const onLoad = React.useCallback(() => {
+    stopWatch.current();
     const f = ref.current;
     const d = f?.contentDocument;
     if (!f || !d) return;
@@ -67,9 +72,18 @@ export function MessageBody({ html, text, plainText, remote, dark }: { html?: st
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(d.body);
-    // Images finishing late change the height.
-    d.querySelectorAll("img").forEach((img) => img.addEventListener("load", measure, { once: true }));
-    f.addEventListener("unload", () => ro.disconnect(), { once: true });
+    // Images finishing late change the height. Their load events never reach a listener inside this script-less frame
+    // (see the header), so the parent looks: every 250 ms until every image is complete, for at most 20 s.
+    const imgs = Array.from(d.images);
+    let timer: number | undefined;
+    if (imgs.length) {
+      const until = Date.now() + 20_000;
+      timer = window.setInterval(() => {
+        measure();
+        if (imgs.every((i) => i.complete) || Date.now() > until) { window.clearInterval(timer); measure(); }
+      }, 250);
+    }
+    stopWatch.current = () => { ro.disconnect(); window.clearInterval(timer); };
   }, []);
 
   return (
