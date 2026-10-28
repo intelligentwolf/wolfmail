@@ -154,7 +154,7 @@ fn parse_id(id: &str, what: &str) -> Result<i64> {
 
 impl Engine {
     pub async fn accounts_list(&self) -> Result<Vec<Account>> {
-        self.store().call(|c| load_accounts(c)).await
+        self.store().read(load_accounts).await
     }
 
     pub(crate) async fn account(&self, id: &str) -> Result<Account> {

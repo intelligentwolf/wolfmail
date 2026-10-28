@@ -196,7 +196,21 @@ async fn load_state(store: &Store, folder_id: i64) -> Result<FolderState> {
         .await
 }
 
+/// Rows saved per write transaction, so a big fetch never holds the database for long (db.rs Store::read).
+const WRITE_CHUNK: usize = 50;
+
 async fn store_rows(store: &Store, ctx: &AccountCtx, folder_id: i64, rows: Vec<FetchRow>, min_uid_exclusive: Option<u32>) -> Result<Vec<i64>> {
+    let mut ids = Vec::new();
+    let mut rest = rows;
+    while !rest.is_empty() {
+        let tail = rest.split_off(rest.len().min(WRITE_CHUNK));
+        let chunk = std::mem::replace(&mut rest, tail);
+        ids.extend(store_row_chunk(store, ctx, folder_id, chunk, min_uid_exclusive).await?);
+    }
+    Ok(ids)
+}
+
+async fn store_row_chunk(store: &Store, ctx: &AccountCtx, folder_id: i64, rows: Vec<FetchRow>, min_uid_exclusive: Option<u32>) -> Result<Vec<i64>> {
     let account_id = ctx.account_id.clone();
     store
         .call(move |c| {
@@ -475,8 +489,13 @@ pub async fn fetch_body(conn: &mut Conn, store: &Store, id: i64, path: &str, uid
         .find(|r| r.uid == Some(uid))
         .and_then(|r| r.body)
         .ok_or_else(|| crate::error::ApiError::not_found("The message on the server (it may have been moved or deleted elsewhere)"))?;
-    let raw2 = raw.clone();
-    store.call(move |c| msgstore::store_body(c, id, &raw2)).await?;
+    // Saved in the background: the message shows now, even while a sync holds the writer.
+    let (store, raw2) = (store.clone(), raw.clone());
+    tokio::spawn(async move {
+        if let Err(e) = store.call(move |c| msgstore::store_body(c, id, &raw2)).await {
+            tracing::warn!(id, "could not cache a fetched body: {}", e.message);
+        }
+    });
     Ok(raw)
 }
 

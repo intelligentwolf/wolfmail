@@ -75,7 +75,7 @@ impl Engine {
 
     async fn remote_rows(&self, rows: &[i64]) -> Result<Vec<RemoteRow>> {
         let rows = rows.to_vec();
-        self.store().call(move |c| rows.iter().map(|r| store::remote_row(c, *r)).collect()).await
+        self.store().read(move |c| rows.iter().map(|r| store::remote_row(c, *r)).collect()).await
     }
 
     pub(crate) async fn account_folder_ids(&self, account_id: &str) -> Result<Vec<String>> {
@@ -98,8 +98,13 @@ impl Engine {
             Backend::Gmail => Gmail { api: &api, store: self.store(), account_id: &acct.id }.raw(&r.remote_id).await?,
             _ => Graph { api: &api, store: self.store(), account_id: &acct.id }.raw(&r.remote_id).await?,
         };
-        let raw2 = raw.clone();
-        self.store().call(move |c| store::store_body_and_headers(c, rowid, &raw2)).await?;
+        // Saved in the background: the message shows now, even while a sync holds the writer.
+        let (store, raw2) = (self.store().clone(), raw.clone());
+        tokio::spawn(async move {
+            if let Err(e) = store.call(move |c| store::store_body_and_headers(c, rowid, &raw2)).await {
+                tracing::warn!(rowid, "could not cache a fetched body: {}", e.message);
+            }
+        });
         Ok(raw)
     }
 

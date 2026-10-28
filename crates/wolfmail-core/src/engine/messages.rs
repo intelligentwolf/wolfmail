@@ -60,26 +60,26 @@ impl Engine {
     }
 
     pub async fn messages_list(&self, q: ViewQuery) -> Result<MessagePage> {
-        self.store().call(move |c| msgstore::list_view(c, &q)).await
+        self.store().read(move |c| msgstore::list_view(c, &q)).await
     }
 
     pub async fn thread_get(&self, thread_id: String, account_id: String) -> Result<Vec<MessageSummary>> {
-        self.store().call(move |c| msgstore::thread_messages(c, &account_id, &thread_id)).await
+        self.store().read(move |c| msgstore::thread_messages(c, &account_id, &thread_id)).await
     }
 
     /// Raw RFC 822 bytes, from the cache or the server.
     pub(crate) async fn raw_bytes(&self, id: i64) -> Result<Vec<u8>> {
-        if let Some(raw) = self.store().call(move |c| msgstore::body_raw(c, id)).await? {
+        if let Some(raw) = self.store().read(move |c| msgstore::body_raw(c, id)).await? {
             return Ok(raw);
         }
         let remote: Option<String> = self
             .store()
-            .call(move |c| Ok(c.query_row("SELECT remote_id FROM messages WHERE id=?1", params![id], |r| r.get(0)).optional()?.flatten()))
+            .read(move |c| Ok(c.query_row("SELECT remote_id FROM messages WHERE id=?1", params![id], |r| r.get(0)).optional()?.flatten()))
             .await?;
         if remote.is_some() {
             return self.api_raw(id).await;
         }
-        let (_, path, uid, aid) = self.store().call(move |c| msgstore::locate(c, id)).await?;
+        let (_, path, uid, aid) = self.store().read(move |c| msgstore::locate(c, id)).await?;
         let store = self.store().clone();
         self.with_interactive(&aid, move |conn| {
             let (store, path) = (store.clone(), path.clone());
@@ -94,7 +94,7 @@ impl Engine {
             "always" => true,
             "contacts" => self
                 .store()
-                .call(move |c| {
+                .read(move |c| {
                     Ok(c.query_row(
                         "SELECT COUNT(*) FROM contacts_seen cs JOIN messages m ON m.from_email=cs.email WHERE m.id=?1 AND cs.sent_to=1",
                         params![id],
@@ -111,7 +111,7 @@ impl Engine {
         let raw = self.raw_bytes(rid).await?;
         let allow = self.allow_remote_for(rid).await?;
         let raw2 = raw.clone();
-        let mut full = self.store().call(move |c| msgstore::assemble_full(c, rid, &raw2, allow)).await?;
+        let mut full = self.store().read(move |c| msgstore::assemble_full(c, rid, &raw2, allow)).await?;
         full.invite = crate::pim::itip::invite_for(self, &raw).await;
         Ok(full)
     }
@@ -120,7 +120,7 @@ impl Engine {
         let rid: i64 = id.parse().map_err(|_| ApiError::not_found("The message"))?;
         let raw = self.raw_bytes(rid).await?;
         let raw2 = raw.clone();
-        let mut full = self.store().call(move |c| msgstore::assemble_full(c, rid, &raw2, true)).await?;
+        let mut full = self.store().read(move |c| msgstore::assemble_full(c, rid, &raw2, true)).await?;
         full.invite = crate::pim::itip::invite_for(self, &raw).await;
         Ok(full)
     }
@@ -663,7 +663,7 @@ impl Engine {
         }
         let limit = limit.clamp(1, 500);
         self.store()
-            .call(move |c| {
+            .read(move |c| {
                 let mut st = c.prepare(&format!(
                     // IMAP "All Mail" copies are duplicates of other folders' rows; a Gmail-API account keeps its
                     // single row per message in its All Mail folder (remote_id set), so that one must be searched.
@@ -693,7 +693,7 @@ impl Engine {
         let prefix_for_book = p.clone();
         let seen = self
             .store()
-            .call(move |c| {
+            .read(move |c| {
                 let like = format!("{}%", p.replace('%', "\\%").replace('_', "\\_"));
                 let any = format!("%{}%", p.replace('%', "\\%").replace('_', "\\_"));
                 let mut st = c.prepare(

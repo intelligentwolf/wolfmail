@@ -216,6 +216,12 @@ const MIGRATIONS: &[&str] = &[
 #[derive(Clone)]
 pub struct Store {
     conn: Arc<Mutex<Connection>>,
+    /// A second, read-only connection for what the user is looking at (the list, an open message, search). In WAL
+    /// mode it reads the last committed state while a sync holds the writer, so a long background write can no longer
+    /// leave a message on its loading skeleton or a search hanging (Paul, 28 Oct 2026: "its not opening the emails?
+    /// and also search didnt work" — one engine thread held the only connection for ~45 s at a time). None for an
+    /// in-memory store, where a second connection would be a different database.
+    reader: Option<Arc<Mutex<Connection>>>,
 }
 
 impl Store {
@@ -233,7 +239,11 @@ impl Store {
             std::fs::create_dir_all(dir)?;
         }
         let conn = Connection::open(path)?;
-        Self::init(conn, migrations)
+        let mut store = Self::init(conn, migrations)?;
+        let reader = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        reader.execute_batch("PRAGMA query_only=ON; PRAGMA busy_timeout=5000;")?;
+        store.reader = Some(Arc::new(Mutex::new(reader)));
+        Ok(store)
     }
 
     pub fn open_in_memory_with(migrations: &[&str]) -> Result<Self> {
@@ -252,7 +262,7 @@ impl Store {
                     .map_err(|e| ApiError::storage(format!("Could not upgrade the local database: {e}")))?;
             }
         }
-        Ok(Store { conn: Arc::new(Mutex::new(conn)) })
+        Ok(Store { conn: Arc::new(Mutex::new(conn)), reader: None })
     }
 
     /// Run `f` with the connection on the blocking pool.
@@ -265,6 +275,21 @@ impl Store {
         tokio::task::spawn_blocking(move || {
             let mut guard = conn.lock();
             f(&mut guard)
+        })
+        .await?
+    }
+
+    /// Run a read-only `f` on the reader connection (the writer's when there is none), so it never waits behind a
+    /// background write. `f` must not write: the connection is opened read-only and refuses.
+    pub async fn read<F, R>(&self, f: F) -> Result<R>
+    where
+        F: FnOnce(&Connection) -> Result<R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let conn = Arc::clone(self.reader.as_ref().unwrap_or(&self.conn));
+        tokio::task::spawn_blocking(move || {
+            let guard = conn.lock();
+            f(&guard)
         })
         .await?
     }
@@ -294,6 +319,29 @@ mod tests {
         assert_eq!(n, 5);
         let v: i64 = s.with(|c| Ok(c.query_row("PRAGMA user_version", [], |r| r.get(0))?)).unwrap();
         assert_eq!(v, MIGRATIONS.len() as i64);
+    }
+
+    #[tokio::test]
+    async fn reader_sees_committed_rows_while_the_writer_is_held() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = Store::open(&dir.path().join("t.sqlite3")).unwrap();
+        s.with(|c| Ok(c.execute("INSERT INTO tags(key, name, color) VALUES ('x', 'X', '#000')", [])?)).unwrap();
+        // Hold the writer (as a long sync batch would) and read through the reader meanwhile.
+        let w = Arc::clone(&s.conn);
+        let held = std::thread::spawn(move || {
+            let g = w.lock();
+            g.execute_batch("BEGIN IMMEDIATE; INSERT INTO tags(key, name, color) VALUES ('y', 'Y', '#111');").unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(400));
+            g.execute_batch("COMMIT;").unwrap();
+        });
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        let t0 = std::time::Instant::now();
+        let n: i64 = s.read(|c| Ok(c.query_row("SELECT COUNT(*) FROM tags WHERE key IN ('x','y')", [], |r| r.get(0))?)).await.unwrap();
+        assert!(t0.elapsed() < std::time::Duration::from_millis(300), "the reader waited for the writer");
+        assert_eq!(n, 1, "only committed rows are seen");
+        held.join().unwrap();
+        // And it can never write.
+        assert!(s.read(|c| Ok(c.execute("DELETE FROM tags", [])?)).await.is_err());
     }
 
     #[test]

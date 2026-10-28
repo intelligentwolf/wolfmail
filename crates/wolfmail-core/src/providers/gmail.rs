@@ -42,6 +42,8 @@ const BACKFILL_PAGES: usize = 4;
 /// this only bounds how many wait in it, so a delete or archive the user asks for has at most a few gets ahead of it.
 const PARALLEL_GETS: usize = 4;
 const BODY_PREFETCH_PER_PASS: i64 = 50;
+/// Messages saved per write transaction during a sync, so the user's own writes (and the reader) never wait long.
+const WRITE_CHUNK: usize = 50;
 /// The synthetic folder every Gmail message row lives in (Gmail has no "All Mail" label id).
 pub const ALL_REMOTE: &str = "wolfmail:all";
 const ALL_PATH: &str = "\u{1}All Mail";
@@ -397,6 +399,21 @@ impl Gmail<'_> {
                 }
             }
         }
+        let mut new_inbox = Vec::new();
+        let mut changed = false;
+        // Saved WRITE_CHUNK at a time, so a 500-message page never holds the database for long (db.rs Store::read).
+        let mut rest = got;
+        while !rest.is_empty() {
+            let tail = rest.split_off(rest.len().min(WRITE_CHUNK));
+            let chunk = std::mem::replace(&mut rest, tail);
+            let (ni, ch) = self.store_chunk(chunk, gen, maps).await?;
+            new_inbox.extend(ni);
+            changed |= ch;
+        }
+        Ok((new_inbox, changed))
+    }
+
+    async fn store_chunk(&self, got: Vec<(bool, GMessage)>, gen: i64, maps: &LabelMaps) -> Result<(Vec<i64>, bool)> {
         let aid = self.account_id.to_string();
         let (map, names, all) = (maps.0.clone(), maps.1.clone(), maps.2);
         let inbox = map.get("INBOX").copied();
