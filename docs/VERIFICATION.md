@@ -81,23 +81,14 @@ Whether to move that one too is IntelligentWolf's call. The same verification pr
 
 ## Google: production and restricted-scope verification
 
-WolfMail's Desktop client lives in IntelligentWolf's Google Cloud project, so it shares that project's consent
-screen, branding and verification status.
+WolfMail has its own Google Cloud project, **WolfMail (`wolfmail-513013`)**. As of 29 Oct 2026 it is:
+- in **Testing**, with 3 test users (ian@, paul@wolf.uk.com, nbtafelberg@gmail.com) of a lifetime cap of 100;
+- **External** user type;
+- set up with the Gmail, Calendar and People APIs enabled;
+- **missing** a logo, homepage, privacy-policy and terms URLs, authorized domains, and every scope on Data Access.
 
-### First, check the project's current state
-Open Google Auth Platform → **Audience** and **Verification Center**:
-- **Publishing status "Testing"**: only listed test users can sign in, and their tokens expire after 7 days.
-  Click **Publish app**, then submit for verification (below).
-- **"In production", verified for the Gmail scopes**: open a case with Google from the Verification Center saying
-  that a new **Desktop** client in the same project (WolfMail) uses the same scopes. Ask whether the existing
-  verification and the security assessment cover it, or whether a resubmission is needed. The assessment probably
-  has to be widened to include the desktop app and its data flows (see "Limited Use" below). Google decides that,
-  not us.
-- **In production, not verified**: users see "Google hasn't verified this app", and restricted scopes stop at 100
-  users. Submit for verification.
-
-A separate Google project just for WolfMail would mean a second verification and a second yearly security
-assessment. Use the shared project unless Google says otherwise.
+Publishing it needs Branding complete. Then click Audience → **Publish app** and submit from the Verification
+Center. It needs its own verification and its own yearly security assessment.
 
 ### Before submitting
 1. **Homepage** on `intelligentwolf.com` (Search Console-verified domain) that describes WolfMail. It can't be just
