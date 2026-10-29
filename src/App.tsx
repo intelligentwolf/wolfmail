@@ -1,6 +1,6 @@
 import * as React from "react";
 import * as TooltipPrimitive from "@radix-ui/react-tooltip";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -8,6 +8,7 @@ import { isPermissionGranted, requestPermission, sendNotification } from "@tauri
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import { boot, getState, isOverviewWindow, openComposer, setUi, togglePanel, useStore } from "./lib/store";
 import { PanelRail } from "./components/PanelRail";
+import { ResizeGrip } from "./components/ResizeGrip";
 import { Overview } from "./features/overview/Overview";
 import { usePim } from "./lib/pim";
 import { PimLayer } from "./features/pim/ModeSwitch";
@@ -141,12 +142,26 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
   const isOverview = useStore((s) => s.view.kind === "overview");
   const pimMode = usePim((s) => s.mode);
   const [maxReader, setMaxReader] = React.useState(false);
+  // Layout presets (features/layout/LayoutMenu) set the list's share of the space after the new layout has rendered.
+  const listRef = React.useRef<ImperativePanelHandle>(null);
+  React.useEffect(() => {
+    const h = (e: Event) => {
+      const size = (e as CustomEvent<number>).detail;
+      setTimeout(() => listRef.current?.resize(size), 60);
+    };
+    window.addEventListener("wm:list-size", h);
+    return () => window.removeEventListener("wm:list-size", h);
+  }, []);
 
   React.useEffect(() => {
-    const h = () => setMaxReader(true);
-    window.addEventListener("wm:maximize-reader", h);
-    return () => window.removeEventListener("wm:maximize-reader", h);
+    const max = () => setMaxReader(true);
+    const restore = () => setMaxReader(false);
+    window.addEventListener("wm:maximize-reader", max);
+    window.addEventListener("wm:restore-reader", restore);
+    return () => { window.removeEventListener("wm:maximize-reader", max); window.removeEventListener("wm:restore-reader", restore); };
   }, []);
+  // A new reading-pane position brings the list back (full-size reading belongs to the layout it was opened in).
+  React.useEffect(() => { setMaxReader(false); }, [readingPane]);
   React.useEffect(() => {
     if (!maxReader) return;
     const h = (e: KeyboardEvent) => {
@@ -164,7 +179,6 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
   const showReaderOnly = maxReader && !!openId;
   const reader = <Reader dark={theme === "dark"} maximized={maxReader} onToggleMax={() => setMaxReader((m) => !m)} />;
   const handle = "w-px bg-border transition-colors hover:bg-[var(--iw-red)] data-[resize-handle-state=drag]:bg-[var(--iw-red)]";
-  const hHandle = "h-px bg-border transition-colors hover:bg-[var(--iw-red)] data-[resize-handle-state=drag]:bg-[var(--iw-red)]";
 
   return (
     <div className="flex h-full bg-surface-inset">
@@ -186,18 +200,18 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
         ) : readingPane === "bottom" ? (
           <Panel id="main" order={2} minSize={40}>
             <PanelGroup direction="vertical" autoSaveId="wm.layout.v">
-              <Panel id="list" order={1} defaultSize={42} minSize={20}><MessageList /></Panel>
-              <PanelResizeHandle className={hHandle} />
-              <Panel id="reader" order={2} minSize={25}>{reader}</Panel>
+              <Panel id="list" order={1} defaultSize={42} minSize={15} ref={listRef}><MessageList /></Panel>
+              <ResizeGrip between="rows" />
+              <Panel id="reader" order={2} minSize={20}>{reader}</Panel>
             </PanelGroup>
           </Panel>
         ) : readingPane === "off" ? (
           <Panel id="list-only" order={2} minSize={40}><MessageList /></Panel>
         ) : (
           <>
-            <Panel id="list" order={2} defaultSize={30} minSize={22} className="min-w-[320px]"><MessageList /></Panel>
-            <PanelResizeHandle className={handle} />
-            <Panel id="reader" order={3} minSize={30}>{reader}</Panel>
+            <Panel id="list" order={2} defaultSize={30} minSize={15} className="min-w-[280px]" ref={listRef}><MessageList /></Panel>
+            <ResizeGrip between="columns" />
+            <Panel id="reader" order={3} minSize={25}>{reader}</Panel>
           </>
         )}
         {iwOn && !isOverview && (

@@ -101,12 +101,12 @@ export function useStore<T>(sel: (s: State) => T): T {
 function loadShown(key: string): boolean {
   try { return localStorage.getItem(key) !== "0"; } catch { return true; }
 }
+export function setPanel(panel: "sidebar" | "iwPanel", shown: boolean) {
+  try { localStorage.setItem(panel === "sidebar" ? "wm.sidebar" : "wm.iwPanel", shown ? "1" : "0"); } catch { /* per-viewer convenience only */ }
+  setState((s) => ({ ui: { ...s.ui, [panel]: shown } }));
+}
 export function togglePanel(panel: "sidebar" | "iwPanel") {
-  setState((s) => {
-    const shown = !s.ui[panel];
-    try { localStorage.setItem(panel === "sidebar" ? "wm.sidebar" : "wm.iwPanel", shown ? "1" : "0"); } catch { /* per-viewer convenience only */ }
-    return { ui: { ...s.ui, [panel]: shown } };
-  });
+  setPanel(panel, !state.ui[panel]);
 }
 
 function loadCollapsed(): Record<string, boolean> {

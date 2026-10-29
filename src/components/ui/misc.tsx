@@ -56,9 +56,9 @@ export const Menu = {
       </DM.Item>
     );
   }),
-  Check: function MenuCheck({ checked, onCheckedChange, children }: { checked: boolean; onCheckedChange: (v: boolean) => void; children: React.ReactNode }) {
+  Check: function MenuCheck({ checked, onCheckedChange, children, className }: { checked: boolean; onCheckedChange: (v: boolean) => void; children: React.ReactNode; className?: string }) {
     return (
-      <DM.CheckboxItem checked={checked} onCheckedChange={onCheckedChange} className={cn(menuItem, "pl-8")}>
+      <DM.CheckboxItem checked={checked} onCheckedChange={onCheckedChange} className={cn(menuItem, "pl-8", className)}>
         <DM.ItemIndicator className="absolute left-2.5"><Check /></DM.ItemIndicator>
         {children}
       </DM.CheckboxItem>

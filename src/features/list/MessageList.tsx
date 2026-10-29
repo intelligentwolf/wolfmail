@@ -21,6 +21,7 @@ import { Button, IconButton } from "../../components/ui/button";
 import * as A from "../actions";
 import { MoveMenuItems } from "./MoveMenu";
 import { SnoozeItems } from "../snooze/SnoozeMenu";
+import { LayoutMenu } from "../layout/LayoutMenu";
 
 const viewTitles: Record<string, string> = {
   inbox: "All inboxes", unread: "Unread", snoozed: "Snoozed", flagged: "Starred", drafts: "Drafts", sent: "Sent", archive: "Archive", junk: "Junk", trash: "Trash",
@@ -77,6 +78,7 @@ export function MessageList() {
           <span className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
             {list.loading && list.items.length === 0 ? "" : `${list.total.toLocaleString()} ${list.total === 1 ? "conversation" : "conversations"}`}
           </span>
+          <LayoutMenu />
         </div>
         <QuickFilter />
       </header>
@@ -289,7 +291,12 @@ const Row = React.memo(function Row({
     else if (e.ctrlKey || e.metaKey) selectRow(m.id, "toggle");
     else selectRow(m.id, "single");
   };
-  const onDouble = () => { if (isDraft) void A.editDraft(m.id); else window.dispatchEvent(new CustomEvent("wm:maximize-reader")); };
+  // Full-size reading only where there's no reading pane ("List only"). In the other layouts the click already shows
+  // the email, and a double-click left every later email opening full-size with the list hidden (Paul, 29 Oct 2026).
+  const onDouble = () => {
+    if (isDraft) void A.editDraft(m.id);
+    else if (getState().settings?.readingPane === "off") window.dispatchEvent(new CustomEvent("wm:maximize-reader"));
+  };
   const onDragStart = (e: React.DragEvent) => {
     const ids = selected ? getState().selected : [m.id];
     e.dataTransfer.setData("application/x-wolfmail-ids", JSON.stringify(ids));
