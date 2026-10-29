@@ -200,6 +200,7 @@ export async function reloadList(opts: { keepSelection?: boolean } = {}) {
     return reloadOverview();
   }
   setState((st) => ({ list: { ...st.list, loading: true, error: undefined } }));
+  const gen = ++fetchGen;
   try {
     const page = await api.messagesList({
       ...viewSource(s.view),
@@ -212,12 +213,13 @@ export async function reloadList(opts: { keepSelection?: boolean } = {}) {
       keepIds: keepIds(s, !!opts.keepSelection),
     });
     if (seq !== listSeq) return;
-    const ids = new Set(page.items.map((m) => m.id));
+    const items = withoutRemoved(page.items, gen);
+    const ids = new Set(items.map((m) => m.id));
     setState((st) => ({
-      list: { items: page.items, total: page.total, loading: false, version: st.list.version + 1 },
+      list: { items, total: page.total - (page.items.length - items.length), loading: false, version: st.list.version + 1 },
       ...(opts.keepSelection
         ? { selected: st.selected.filter((id) => ids.has(id)), openId: st.openId }
-        : { selected: [], cursor: page.items[0]?.id, anchor: undefined, openId: undefined }),
+        : { selected: [], cursor: items[0]?.id, anchor: undefined, openId: undefined }),
     }));
   } catch (e) {
     if (seq !== listSeq) return;
@@ -232,6 +234,7 @@ export async function loadMore() {
   if (s.view.kind === "overview" || loadingMore || s.list.loading || s.list.items.length >= s.list.total) return;
   loadingMore = true;
   const seq = listSeq;
+  const gen = ++fetchGen;
   try {
     const page = await api.messagesList({
       ...viewSource(s.view),
@@ -239,7 +242,8 @@ export async function loadMore() {
       sort: "dateDesc", offset: s.list.items.length, limit: PAGE, keepIds: keepIds(s, true),
     });
     if (seq !== listSeq) return;
-    setState((st) => ({ list: { ...st.list, items: [...st.list.items, ...page.items], total: page.total } }));
+    const items = withoutRemoved(page.items, gen);
+    setState((st) => ({ list: { ...st.list, items: [...st.list.items, ...items], total: page.total - (page.items.length - items.length) } }));
   } catch (e) {
     notify.error(e, "Couldn't load more messages");
   } finally {
@@ -274,12 +278,14 @@ export async function reloadOverview(onlyFolderIds?: string[]) {
     if (!inbox) {
       col = { items: [], total: 0, loading: false, error: a.status === "authError" ? "Sign-in needed before this inbox can sync." : "Inbox not synced yet." };
     } else {
+      const gen = ++fetchGen;
       try {
         const page = await api.messagesList({
           folderId: inbox.id, filter: state.filter, search: state.search.trim() || undefined,
           threaded: state.settings?.threaded ?? true, sort: "dateDesc", offset: 0, limit: OVERVIEW_PER_COLUMN,
         });
-        col = { items: page.items, total: page.total, loading: false };
+        const items = withoutRemoved(page.items, gen);
+        col = { items, total: page.total - (page.items.length - items.length), loading: false };
       } catch (e) {
         col = { items: [], total: 0, loading: false, error: (e as { message?: string }).message ?? String(e) };
       }
@@ -365,8 +371,32 @@ export function selectAll() {
   setState((s) => ({ selected: s.list.items.map((m) => m.id) }));
 }
 
-/** After a move/trash/archive the rows vanish; put the cursor on the next row like every desktop client does. */
+/** Rows the user just moved away (delete/archive/move/junk/snooze) stay hidden while the engine does the server
+ *  round trip: it changes the server first and its database only after, and background sync meanwhile sends
+ *  mail://changed, so a list reload in between read the old rows and the deleted mail "came back, then disappeared
+ *  again" (Paul, 29 Oct 2026). id → the last fetch that may still hold stale rows: Infinity while the action is in
+ *  flight, then the fetch generation at the moment it finished. Only a fetch started after that is trusted. */
+const removedRows = new Map<string, number>();
+let fetchGen = 0;
+
+function withoutRemoved(items: MessageSummary[], gen: number): MessageSummary[] {
+  for (const [id, upTo] of removedRows) if (gen > upTo) removedRows.delete(id);
+  return removedRows.size ? items.filter((m) => !removedRows.has(m.id)) : items;
+}
+
+/** The engine call behind a removeRowsLocally finished: on success the rows stay hidden from fetches that started
+ *  before now; on failure they are released so the reload that follows shows them again. */
+export function settleRemoved(ids: string[], ok: boolean) {
+  for (const id of ids) {
+    if (ok) removedRows.set(id, fetchGen);
+    else removedRows.delete(id);
+  }
+}
+
+/** After a move/trash/archive the rows vanish; put the cursor on the next row like every desktop client does.
+ *  Pair with settleRemoved once the engine call ends. */
 export function removeRowsLocally(ids: string[]) {
+  for (const id of ids) removedRows.set(id, Infinity);
   setState((s) => {
     const gone = new Set(ids);
     const overview = Object.fromEntries(Object.entries(s.overview).map(([k, c]) => {

@@ -1,7 +1,7 @@
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
 import {
-  findRow, getState, openComposer, patchRows, reloadList, refreshFolders, removeRowsLocally, selectedMessages, setUi,
+  findRow, getState, openComposer, patchRows, reloadList, refreshFolders, removeRowsLocally, selectedMessages, setUi, settleRemoved,
 } from "../lib/store";
 import type { MessageSummary } from "../lib/types";
 import { forwardDraft, replyDraft, splitDraftHtml } from "./compose/drafts";
@@ -34,10 +34,14 @@ async function conversationIds(rows: MessageSummary[]): Promise<string[]> {
   return [...ids];
 }
 
-async function guarded(label: string, fn: () => Promise<unknown>) {
+/** `removed`: rows taken off the list by removeRowsLocally for this action; they stay hidden after success and are
+ *  released before the reload on failure, so a failed delete shows its rows again. */
+async function guarded(label: string, fn: () => Promise<unknown>, removed: string[] = []) {
   try {
     await fn();
+    settleRemoved(removed, true);
   } catch (e) {
+    settleRemoved(removed, false);
     notify.error(e, label);
     void reloadList({ keepSelection: true });
   } finally {
@@ -48,29 +52,33 @@ async function guarded(label: string, fn: () => Promise<unknown>) {
 export async function archive(ids?: string[]) {
   const rows = targets(ids);
   if (!rows.length) return;
-  removeRowsLocally(rows.map((m) => m.id));
-  await guarded("Couldn't archive", async () => { const all = await conversationIds(rows); await api.archive(all); });
+  const gone = rows.map((m) => m.id);
+  removeRowsLocally(gone);
+  await guarded("Couldn't archive", async () => { const all = await conversationIds(rows); await api.archive(all); }, gone);
 }
 
 export async function trash(ids?: string[]) {
   const rows = targets(ids);
   if (!rows.length) return;
-  removeRowsLocally(rows.map((m) => m.id));
-  await guarded("Couldn't delete", async () => { const all = await conversationIds(rows); await api.trash(all); });
+  const gone = rows.map((m) => m.id);
+  removeRowsLocally(gone);
+  await guarded("Couldn't delete", async () => { const all = await conversationIds(rows); await api.trash(all); }, gone);
 }
 
 export async function junk(isJunk: boolean, ids?: string[]) {
   const rows = targets(ids);
   if (!rows.length) return;
-  removeRowsLocally(rows.map((m) => m.id));
-  await guarded(isJunk ? "Couldn't mark as junk" : "Couldn't mark as not junk", async () => api.junk(await conversationIds(rows), isJunk));
+  const gone = rows.map((m) => m.id);
+  removeRowsLocally(gone);
+  await guarded(isJunk ? "Couldn't mark as junk" : "Couldn't mark as not junk", async () => api.junk(await conversationIds(rows), isJunk), gone);
 }
 
 export async function moveTo(folderId: string, ids?: string[]) {
   const rows = targets(ids);
   if (!rows.length) return;
-  removeRowsLocally(rows.map((m) => m.id));
-  await guarded("Couldn't move", async () => api.move(await conversationIds(rows), folderId));
+  const gone = rows.map((m) => m.id);
+  removeRowsLocally(gone);
+  await guarded("Couldn't move", async () => api.move(await conversationIds(rows), folderId), gone);
 }
 
 export async function copyTo(folderId: string, ids?: string[]) {
@@ -171,14 +179,17 @@ export function openSettings(section = "general") { setUi({ settings: section })
 export async function snooze(until: number, ids?: string[]) {
   const rows = targets(ids);
   if (!rows.length) return;
-  removeRowsLocally(rows.map((m) => m.id));
+  const gone = rows.map((m) => m.id);
+  removeRowsLocally(gone);
   try {
     const t = await conversationIds(rows);
     await api.snooze(t, until);
+    settleRemoved(gone, true);
     notify.ok(`Snoozed until ${new Date(until).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`, {
       action: { label: "Undo", onClick: () => { api.unsnooze(t).then(() => reloadList({ keepSelection: true })).catch((e) => notify.error(e, "Couldn't un-snooze")); } },
     });
   } catch (e) {
+    settleRemoved(gone, false);
     notify.error(e, "Couldn't snooze");
     void reloadList({ keepSelection: true });
   } finally {
@@ -189,6 +200,7 @@ export async function snooze(until: number, ids?: string[]) {
 export async function unsnooze(ids?: string[]) {
   const rows = targets(ids);
   if (!rows.length) return;
-  removeRowsLocally(rows.map((m) => m.id));
-  await guarded("Couldn't un-snooze", async () => api.unsnooze(await conversationIds(rows)));
+  const gone = rows.map((m) => m.id);
+  removeRowsLocally(gone);
+  await guarded("Couldn't un-snooze", async () => api.unsnooze(await conversationIds(rows)), gone);
 }
