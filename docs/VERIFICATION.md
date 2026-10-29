@@ -81,14 +81,22 @@ Whether to move that one too is IntelligentWolf's call. The same verification pr
 
 ## Google: production and restricted-scope verification
 
-WolfMail has its own Google Cloud project, **WolfMail (`wolfmail-513013`)**. As of 29 Oct 2026 it is:
+WolfMail has its own Google Cloud project, **WolfMail (`wolfmail-513013`)**. Before setup on 29 Oct 2026 it was:
 - in **Testing**, with 3 test users (ian@, paul@wolf.uk.com, nbtafelberg@gmail.com) of a lifetime cap of 100;
 - **External** user type;
 - set up with the Gmail, Calendar and People APIs enabled;
 - **missing** a logo, homepage, privacy-policy and terms URLs, authorized domains, and every scope on Data Access.
 
-Publishing it needs Branding complete. Then click Audience → **Publish app** and submit from the Verification
-Center. It needs its own verification and its own yearly security assessment.
+Status after setup on 29 Oct 2026:
+- **In production.** Anyone can sign in; they see "Google hasn't verified this app" → Advanced → Go to WolfMail.
+  At most 100 users ever can do so before verification.
+- Branding is verified and published: homepage `https://intelligentwolf.com/wolfmail`, privacy
+  `/wolfmail/privacy`, terms `/terms`, authorized domain `intelligentwolf.com`.
+- All 8 scopes are on Data Access, with both justifications saved.
+- Still to do before submitting: "What features will you use?" = Email client, the logo upload, and the demo video
+  link. Then Verification Center → Prepare for verification → Confirm.
+
+WolfMail needs its own verification and its own yearly security assessment.
 
 ### Before submitting
 1. **Homepage** on `intelligentwolf.com` (Search Console-verified domain) that describes WolfMail. It can't be just
