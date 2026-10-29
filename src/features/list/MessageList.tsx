@@ -3,7 +3,6 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive, Trash2, Star, Paperclip, MailOpen, Mail, Search, X, Inbox, SearchX, AlertTriangle, CornerUpLeft, Forward,
   Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus, Sparkles, Undo2,
-  PanelLeftClose, PanelLeftOpen,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "../../lib/notify";
@@ -12,7 +11,7 @@ import { invalidatePeople, lookupPeople, otherParty, useIwMatch, useMyAddresses 
 import { api } from "../../lib/api";
 import { IW_ENABLED } from "../../lib/features";
 import {
-  useStore, getState, selectRow, loadMore, setFilter, setSearch, reloadList, selectAll, folderById, accountById, undoLast, togglePanel,
+  useStore, getState, selectRow, loadMore, setFilter, setSearch, reloadList, selectAll, folderById, accountById, undoLast,
 } from "../../lib/store";
 import type { MessageSummary, ViewFilter } from "../../lib/types";
 import { format } from "date-fns";
@@ -38,7 +37,6 @@ export function MessageList() {
   const accountsCount = useStore((s) => s.accounts.length);
   const folder = useStore((s) => (s.view.kind === "folder" ? s.folders.find((f) => f.id === (s.view as { folderId: string }).folderId) : undefined));
   const account = useStore((s) => (folder ? s.accounts.find((a) => a.id === folder.accountId) : undefined));
-  const sidebarOn = useStore((s) => s.ui.sidebar);
 
   const layout = settings?.listLayout ?? "multiline";
   const compact = settings?.density === "compact";
@@ -72,10 +70,6 @@ export function MessageList() {
     <section aria-label={`${title} messages`} className="flex h-full min-w-0 flex-col bg-surface">
       <header className="flex flex-col gap-2.5 border-b border-border px-4 pb-3 pt-4">
         <div className="flex items-center gap-2">
-          <IconButton label={sidebarOn ? "Hide mailboxes" : "Show mailboxes"} shortcut="[" size="iconSm" className="-ml-1.5"
-            onClick={() => togglePanel("sidebar")}>
-            {sidebarOn ? <PanelLeftClose /> : <PanelLeftOpen />}
-          </IconButton>
           {account && <span aria-hidden className="size-2.5 rounded-full" style={{ background: account.color }} />}
           <h1 className="min-w-0 truncate font-title text-[19px] leading-none">{title}</h1>
           {account && <span className="truncate text-xs text-muted-foreground">{account.name}</span>}

@@ -1,9 +1,9 @@
 import * as React from "react";
 import {
   Inbox, Send, FileText, Trash2, ShieldAlert, Archive, Star, MailOpen, Folder as FolderIcon, ChevronRight, PenSquare,
-  Plus, Settings as SettingsIcon, LayoutGrid, AlarmClock, Filter, RefreshCw, AlertTriangle, WifiOff, Mails, CheckCheck, FolderPlus, Pencil, Upload,
+  Plus, Settings as SettingsIcon, LayoutGrid, AlarmClock, Filter, RefreshCw, AlertTriangle, WifiOff, Mails, CheckCheck, FolderPlus, Pencil, Upload, PanelLeftClose,
 } from "lucide-react";
-import { useStore, getState, setView, toggleCollapsed, setUi, openComposer, refreshFolders } from "../../lib/store";
+import { useStore, getState, setView, toggleCollapsed, togglePanel, setUi, openComposer, refreshFolders } from "../../lib/store";
 import { moveTo, copyTo } from "../actions";
 import { IW_ENABLED } from "../../lib/features";
 import { api } from "../../lib/api";
@@ -68,6 +68,7 @@ export function Sidebar() {
         >
           <RefreshCw className={cn((syncing || anySyncing) && "wm-spin")} />
         </IconButton>
+        <IconButton label="Hide mailboxes" shortcut="[" size="iconSm" onClick={() => togglePanel("sidebar")}><PanelLeftClose /></IconButton>
       </div>
       <ModeSwitch />
 

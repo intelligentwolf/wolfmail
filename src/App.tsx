@@ -6,7 +6,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { AlertTriangle, RefreshCw } from "lucide-react";
-import { boot, getState, isOverviewWindow, openComposer, setUi, useStore } from "./lib/store";
+import { boot, getState, isOverviewWindow, openComposer, setUi, togglePanel, useStore } from "./lib/store";
+import { PanelRail } from "./components/PanelRail";
 import { Overview } from "./features/overview/Overview";
 import { usePim } from "./lib/pim";
 import { PimLayer } from "./features/pim/ModeSwitch";
@@ -43,8 +44,13 @@ import { OutboxDialog } from "./features/outbox/OutboxDialog";
 import { EmptyState, Skeleton } from "./components/ui/misc";
 import { Button } from "./components/ui/button";
 
+function storedTheme(): "light" | "dark" | null {
+  try { const t = localStorage.getItem("wm.theme"); return t === "dark" || t === "light" ? t : null; } catch { return null; }
+}
+
 function useTheme(): "light" | "dark" {
   const pref = useStore((s) => s.settings?.theme ?? "system");
+  const loaded = useStore((s) => !!s.settings);
   const [sys, setSys] = React.useState(() => window.matchMedia("(prefers-color-scheme: dark)").matches);
   React.useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -52,8 +58,13 @@ function useTheme(): "light" | "dark" {
     mq.addEventListener("change", h);
     return () => mq.removeEventListener("change", h);
   }, []);
-  const theme = pref === "system" ? (sys ? "dark" : "light") : pref;
-  React.useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);
+  // Until settings arrive, keep the theme public/boot.js applied (the one last used), so the splash and first paint
+  // don't switch theme halfway through starting.
+  const theme = !loaded ? (storedTheme() ?? (sys ? "dark" : "light")) : pref === "system" ? (sys ? "dark" : "light") : pref;
+  React.useEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    if (loaded) { try { localStorage.setItem("wm.theme", theme); } catch { /* per-viewer convenience only */ } }
+  }, [theme, loaded]);
   return theme;
 }
 
@@ -66,6 +77,15 @@ export function App() {
   const theme = useTheme();
 
   React.useEffect(() => { void boot(); }, []);
+  // The splash in index.html covers the start; fade it out once the engine has answered (or failed to).
+  React.useEffect(() => {
+    if (!ready) return;
+    const splash = document.getElementById("wm-splash");
+    if (!splash) return;
+    splash.classList.add("wm-splash-out");
+    const t = setTimeout(() => splash.remove(), 250);
+    return () => clearTimeout(t);
+  }, [ready]);
   React.useEffect(() => installShortcuts(), []);
   React.useEffect(() => {
     const h = (e: Event) => { startFilterFromMessage((e as CustomEvent<MessageSummary>).detail); setUi({ settings: "filters" }); };
@@ -113,7 +133,9 @@ export function App() {
 
 function MailShell({ theme }: { theme: "light" | "dark" }) {
   const readingPane = useStore((s) => s.settings?.readingPane ?? "right");
-  const iwOn = useStore((s) => !!s.iw?.connected && s.ui.iwPanel);
+  const iwConnected = useStore((s) => !!s.iw?.connected);
+  const iwShown = useStore((s) => s.ui.iwPanel);
+  const iwOn = iwConnected && iwShown;
   const sidebarOn = useStore((s) => s.ui.sidebar);
   const openId = useStore((s) => s.openId);
   const isOverview = useStore((s) => s.view.kind === "overview");
@@ -145,7 +167,9 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
   const hHandle = "h-px bg-border transition-colors hover:bg-[var(--iw-red)] data-[resize-handle-state=drag]:bg-[var(--iw-red)]";
 
   return (
-    <div className="h-full bg-surface-inset">
+    <div className="flex h-full bg-surface-inset">
+      {!sidebarOn && <PanelRail side="left" label="Mailboxes" shortcut="[" onShow={() => togglePanel("sidebar")} />}
+      <div className="h-full min-w-0 flex-1">
       <PanelGroup direction="horizontal" autoSaveId="wm.layout.h">
         {sidebarOn && (
           <>
@@ -183,6 +207,8 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
           </>
         )}
       </PanelGroup>
+      </div>
+      {iwConnected && !iwShown && !isOverview && <PanelRail side="right" label="IntelligentWolf" shortcut="I" onShow={() => togglePanel("iwPanel")} />}
     </div>
   );
 }

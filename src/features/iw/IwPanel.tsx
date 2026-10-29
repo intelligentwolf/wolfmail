@@ -2,11 +2,11 @@ import * as React from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Sparkles, ClipboardCheck, BookmarkPlus, ExternalLink, Building2, Phone, Mail, Calendar, FileText, MessageSquare, Receipt,
-  UserRound, ListChecks, X, UserPen, UserPlus,
+  UserRound, ListChecks, UserPen, UserPlus, PanelRightClose,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
-import { selectOpenRow, setUi, useStore } from "../../lib/store";
+import { selectOpenRow, togglePanel, useStore } from "../../lib/store";
 import type { IwPerson, MessageSummary } from "../../lib/types";
 import { cn, displayName, listDate } from "../../lib/utils";
 import { Avatar, EmptyState, Skeleton, Spinner } from "../../components/ui/misc";
@@ -46,7 +46,7 @@ function Shell({ children }: { children: React.ReactNode }) {
         <span className="font-title text-[14px]">IntelligentWolf</span>
         <span className="truncate text-xs text-muted-foreground">{org}</span>
         <div className="flex-1" />
-        <IconButton label="Hide panel" shortcut="I" size="iconSm" onClick={() => setUi({ iwPanel: false })}><X /></IconButton>
+        <IconButton label="Hide IntelligentWolf panel" shortcut="I" size="iconSm" onClick={() => togglePanel("iwPanel")}><PanelRightClose /></IconButton>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
     </aside>

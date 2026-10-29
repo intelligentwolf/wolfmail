@@ -74,7 +74,9 @@ function Conversation({ row, dark, maximized, onToggleMax, iwPanel }: { row: Mes
     <article aria-label={row.subject || "(no subject)"} className="flex h-full min-w-0 flex-col bg-surface">
       <Toolbar row={row} latestId={latest.id} maximized={maximized} onToggleMax={onToggleMax} iwPanel={iwPanel} iwConnected={iwConnected} />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-[920px] px-6 pb-16 pt-5">
+        {/* Full width of the pane: with the side panels hidden the message should use all the room it has
+            (Paul, 29 Oct 2026), not sit in a 920 px column. */}
+        <div className="px-6 pb-16 pt-5">
           <h2 className="selectable font-title text-[22px] leading-tight">{row.subject || "(no subject)"}</h2>
           <SubjectMeta row={row} count={members?.length ?? row.threadCount} />
           {error ? (
