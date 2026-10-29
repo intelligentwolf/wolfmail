@@ -388,13 +388,21 @@ pub fn list_view(conn: &Connection, q: &ViewQuery) -> Result<MessagePage> {
             params_from_iter(ps.iter()),
             |r| r.get(0),
         )?;
+        // Each thread's newest message comes from one window pass. The previous form looked it up with a correlated
+        // subquery over the whole result set per thread — quadratic: an All-inboxes search for "paul" (9,661 hits)
+        // took 93 s on Paul's 277k-message mailbox, 0.3 s ungrouped (29 Oct 2026). Same rows, counts and order:
+        // rn=1 is the (date DESC, id DESC) newest, so its date is the thread's latest. (SQLite window functions,
+        // https://sqlite.org/windowfunctions.html.)
         let sql = format!(
-            "WITH v AS (SELECT m.* FROM messages m WHERE {where_sql}),
-                  t AS (SELECT account_id, thread_id, COUNT(*) AS n, SUM(seen=0) AS unread, MAX(date) AS last,
-                               (SELECT id FROM v v2 WHERE v2.account_id=v.account_id AND v2.thread_id=v.thread_id ORDER BY date DESC, id DESC LIMIT 1) AS top
-                        FROM v GROUP BY account_id, thread_id)
-             SELECT {SUMMARY_COLS}, t.n, t.unread FROM t JOIN messages m ON m.id = t.top
-             ORDER BY t.last {order}, m.id {order} LIMIT {limit} OFFSET {offset}"
+            "WITH r AS (SELECT m.id, m.date,
+                               ROW_NUMBER() OVER w AS rn,
+                               COUNT(*) OVER (PARTITION BY m.account_id, m.thread_id) AS n,
+                               SUM(m.seen=0) OVER (PARTITION BY m.account_id, m.thread_id) AS unread
+                        FROM messages m WHERE {where_sql}
+                        WINDOW w AS (PARTITION BY m.account_id, m.thread_id ORDER BY m.date DESC, m.id DESC))
+             SELECT {SUMMARY_COLS}, r.n, r.unread FROM r JOIN messages m ON m.id = r.id
+             WHERE r.rn = 1
+             ORDER BY r.date {order}, m.id {order} LIMIT {limit} OFFSET {offset}"
         );
         let mut stmt = conn.prepare(&sql)?;
         let items = stmt
