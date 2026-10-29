@@ -380,6 +380,10 @@ pub fn sanitize_html(src: &str, allow_remote: bool, cid_map: &HashMap<String, St
     builder
         .add_tags(&["style", "font", "center", "big", "small", "u", "s", "strike", "tt", "section", "header", "footer", "article", "main", "nav", "figure", "figcaption", "mark", "picture", "wbr"])
         .rm_clean_content_tags(&["style"])
+        // <title> is head metadata: dropping just the tag left its text as a stray first line of the message (Paul,
+        // 29 Oct 2026, "IntelligentWolf Ltd — daily KPI, 28 Oct" above the email). Ammonia: clean-content tags are
+        // removed with their contents.
+        .add_clean_content_tags(&["title"])
         .add_generic_attributes(&["style", "align", "valign", "bgcolor", "width", "height", "dir", "lang", "class", "id", "title", "role", "border", "color"])
         .add_tag_attributes("font", &["face", "size", "color"])
         .add_tag_attributes("table", &["cellpadding", "cellspacing", "border", "background", "summary"])
@@ -645,6 +649,13 @@ JVBERi0xLjQK\r\n\
         assert_eq!(name, "invoice.pdf");
         assert_eq!(mime, "application/pdf");
         assert_eq!(&bytes[..5], b"%PDF-");
+    }
+
+    #[test]
+    fn title_text_is_not_shown() {
+        let s = sanitize_html("<html><head><title>Daily KPI</title><style>p{color:red}</style></head><body><p>Hi</p></body></html>", false, &HashMap::new());
+        assert!(!s.html.contains("Daily KPI"), "{}", s.html);
+        assert!(s.html.contains("<style>") && s.html.contains("<p>Hi</p>"), "{}", s.html);
     }
 
     #[test]
