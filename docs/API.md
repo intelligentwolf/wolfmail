@@ -238,7 +238,7 @@ dir: Argon2id-derived key, XChaCha20-Poly1305, primary password (see `crates/wol
 - An account signed in with Google (`auth: oauthGoogle`) syncs and sends through the **Gmail API**; one signed in
   with Microsoft (`oauthMicrosoft`) through **Microsoft Graph**. Password accounts — including Gmail/Outlook with an
   app password — stay on IMAP/SMTP. Reason: WolfMail uses the same OAuth apps as IntelligentWolf, which are approved
-  for `gmail.modify`/`gmail.send`/`gmail.settings.basic` and Graph `Mail.ReadWrite`/`Mail.Send`/`User.Read`, not for
+  for `gmail.modify` (the only Gmail scope WolfMail requests) and Graph `Mail.ReadWrite`/`Mail.Send`/`User.Read`, not for
   IMAP/SMTP (`https://mail.google.com/`, `IMAP.AccessAsUser.All`). Contract types are unchanged.
 - `account_test` for an OAuth config makes one authenticated API call (Gmail `users.getProfile`, Graph
   `GET /me/mailFolders/inbox`); `imapOk`/`smtpOk` both report it.

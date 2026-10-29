@@ -9,7 +9,10 @@
 //! - Google "OAuth 2.0 for Mobile & Desktop Apps" (re-read 2026-10-28): create a "Desktop app" client; loopback
 //!   redirect `http://127.0.0.1:port`; "Desktop apps are public clients and cannot keep secrets confidential" —
 //!   client_secret is optional on the token requests; always use PKCE.
-//! - Scopes are the ones IntelligentWolf's Google app is already approved for: gmail.modify, gmail.send, gmail.settings.basic, openid, email. NOT
+//! - Google mail scopes: gmail.modify, openid, email — the narrowest set the Gmail API calls in providers/gmail.rs need
+//!   (Google verification asks for the narrowest scopes). Gmail API scopes page (fetched 2026-10-29): gmail.modify =
+//!   "Read, compose, and send emails from your Gmail account" (covers messages.send and drafts), so gmail.send is not
+//!   requested; gmail.settings.basic is not requested because WolfMail never calls a settings endpoint. NOT
 //!   https://mail.google.com/ (IMAP/SMTP), which that app is not approved for — mail goes through the Gmail API.
 //! - Microsoft Learn "OAuth 2.0 authorization code flow" (re-read 2026-10-28): `https://login.microsoftonline.com/
 //!   {tenant}/oauth2/v2.0/authorize|token`, tenant `common` (as IntelligentWolf does); public
@@ -52,7 +55,7 @@ fn cfg(p: OAuthProvider) -> ProviderCfg {
         OAuthProvider::Google => ProviderCfg {
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth",
             token_url: "https://oauth2.googleapis.com/token",
-            scopes: "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.settings.basic openid email",
+            scopes: "https://www.googleapis.com/auth/gmail.modify openid email",
             client_id: option_env!("WOLFMAIL_GOOGLE_CLIENT_ID"),
             client_secret: option_env!("WOLFMAIL_GOOGLE_CLIENT_SECRET"),
             env_name: "WOLFMAIL_GOOGLE_CLIENT_ID",
@@ -134,9 +137,10 @@ fn missing_google_scopes(requested: &str, granted: Option<&str>) -> Vec<String> 
 fn google_scope_words(scope: &str) -> &'static str {
     match scope.rsplit('/').next().unwrap_or(scope) {
         "gmail.modify" => "Read, compose and send emails / manage your mail",
-        "gmail.send" => "Send email on your behalf",
-        "gmail.settings.basic" => "See, edit, create and change your email settings",
-        "calendar" => "See, edit, share and delete your calendars",
+        // Source: Google Calendar API "Choose scopes" page (read 2026-10-29), Google's own wording.
+        "calendar.events" => "View and edit events on all your calendars",
+        "calendar.calendarlist.readonly" => "See the list of Google calendars you're subscribed to",
+        "calendar.calendars" => "See and change the properties of Google calendars you have access to, and create secondary calendars",
         "contacts.readonly" => "See and download your contacts",
         "contacts.other.readonly" => "See and download contact info automatically saved in your \"Other contacts\"",
         _ => "one of the permissions WolfMail asked for",
@@ -239,13 +243,15 @@ pub fn oauth_key_for(email: &str) -> String {
 
 /// Calendar & contacts sign-in (pim/): the same apps and flow as mail, a different scope set, and a separate
 /// keychain entry so mail and calendar grants can be revoked independently.
-/// Google: Calendar API v3 `auth/calendar` + People API `contacts.readonly` / `contacts.other.readonly` (Google
-/// "OAuth 2.0 Scopes for Google APIs": Calendar API v3, People API v1) — the scopes IntelligentWolf's Google app
-/// already uses (IntelligentWolf's own Google/Microsoft apps).
+/// Google: the narrowest Calendar API v3 scopes that cover every call in pim/google.rs (Calendar API reference pages,
+/// read 2026-10-29): calendarList.list → `calendar.calendarlist.readonly`; events list/instances/insert/patch/delete
+/// → `calendar.events`; calendars.insert (new calendar) → `calendar.calendars`. Not `calendar` (also sharing and
+/// permanently deleting calendars), which Google verification would reject as broader than needed. People API
+/// `contacts.readonly` / `contacts.other.readonly` for read-only contacts.
 /// Microsoft: Graph `Calendars.ReadWrite` (calendarView + event CRUD, Graph "List calendarView" permissions table)
 /// and `Contacts.ReadWrite` (Graph contact resource) — the latter must be added to the Entra app.
 pub const PIM_GOOGLE_SCOPES: &str =
-    "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly openid email";
+    "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.calendarlist.readonly https://www.googleapis.com/auth/calendar.calendars https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly openid email";
 pub const PIM_MS_SCOPES: &str =
     "https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/Contacts.ReadWrite offline_access openid email";
 
@@ -467,8 +473,9 @@ mod tests {
         let g = auth_url(OAuthProvider::Google, "cid", "http://127.0.0.1:5000", "st", "ch", "me@gmail.com").unwrap();
         let q: std::collections::HashMap<String, String> = g.query_pairs().into_owned().collect();
         assert_eq!(g.host_str(), Some("accounts.google.com"));
-        assert_eq!(q["scope"], "https://www.googleapis.com/auth/gmail.modify https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.settings.basic openid email");
+        assert_eq!(q["scope"], "https://www.googleapis.com/auth/gmail.modify openid email");
         assert!(!q["scope"].contains("mail.google.com"));
+        assert!(!PIM_GOOGLE_SCOPES.split_whitespace().any(|s| s == "https://www.googleapis.com/auth/calendar"), "narrow calendar scopes only");
         assert_eq!(q["code_challenge_method"], "S256");
         assert_eq!(q["redirect_uri"], "http://127.0.0.1:5000");
         let m = auth_url(OAuthProvider::Microsoft, "cid", "http://localhost:5000", "st", "ch", "me@contoso.com").unwrap();
