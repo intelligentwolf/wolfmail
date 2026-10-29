@@ -42,6 +42,9 @@ export function textToHtml(text: string): string {
   return out;
 }
 
+/** A fresh iframe per document (see `key` below), so every document change gets its own load event to measure. */
+let frameSeq = 0;
+
 export function MessageBody({ html, text, plainText, remote, dark }: { html?: string; text?: string; plainText?: boolean; remote: boolean; dark: boolean }) {
   const ref = React.useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = React.useState(40);
@@ -52,10 +55,12 @@ export function MessageBody({ html, text, plainText, remote, dark }: { html?: st
     () => frameDoc(plain ? (text != null ? textToHtml(text) : html ?? "") : html!, { remote, plain, dark }),
     [html, text, remote, plain, dark],
   );
+  const frameKey = React.useMemo(() => ++frameSeq, [doc]);
 
-  // Stops the image watch below when the frame reloads or the reader unmounts.
+  // Stops the measuring below when the frame gets a new document (Load images) or the reader unmounts. A watch left
+  // running on the replaced document measured it as empty and squashed the message to one line (Paul, 29 Oct 2026).
   const stopWatch = React.useRef<() => void>(() => {});
-  React.useEffect(() => () => stopWatch.current(), []);
+  React.useEffect(() => () => stopWatch.current(), [doc]);
   // Should the frame's load event never arrive, show it anyway rather than leave the message invisible.
   React.useEffect(() => {
     const t = setTimeout(() => setMeasured(true), 1000);
@@ -69,33 +74,39 @@ export function MessageBody({ html, text, plainText, remote, dark }: { html?: st
     if (!f || !d) { setMeasured(true); return; }
     // Measure the body, not the document: documentElement.scrollHeight never drops below the frame's own height,
     // so a frame measured that way can grow but never shrink to fit a one-line message.
+    // The body's scrollHeight also counts content that overflows the body itself, and doesn't depend on the frame's
+    // height, so it can't make the frame oscillate. A plain seven-paragraph email showed with its last line cut off
+    // (Paul, 29 Oct 2026, "Building something mobile?"); the re-measuring below catches late layout too.
     const measure = () => {
+      if (ref.current?.contentDocument !== d) return; // a replaced document: its size means nothing now
       const b = d.body;
       if (!b) return;
       const st = d.defaultView?.getComputedStyle(b);
       const pad = st ? parseFloat(st.marginTop) + parseFloat(st.marginBottom) : 0;
-      setHeight(Math.max(24, Math.ceil(b.getBoundingClientRect().height + pad)));
+      setHeight(Math.max(24, Math.ceil(Math.max(b.getBoundingClientRect().height, b.scrollHeight) + pad)));
     };
     measure();
     setMeasured(true); // even when the body couldn't be measured: a frame at the old height beats an invisible one
     const ro = new ResizeObserver(measure);
     ro.observe(d.body);
-    // Images finishing late change the height. Their load events never reach a listener inside this script-less frame
-    // (see the header), so the parent looks: every 250 ms until every image is complete, for at most 20 s.
+    void d.fonts?.ready.then(measure);
+    // Late layout changes the height: images finishing (their load events never reach a listener inside this
+    // script-less frame, see the header) and text settling after fonts. So the parent looks every 250 ms — for 2 s,
+    // or until every image is complete (at most 20 s).
     const imgs = Array.from(d.images);
-    let timer: number | undefined;
-    if (imgs.length) {
-      const until = Date.now() + 20_000;
-      timer = window.setInterval(() => {
-        measure();
-        if (imgs.every((i) => i.complete) || Date.now() > until) { window.clearInterval(timer); measure(); }
-      }, 250);
-    }
+    const settleUntil = Date.now() + 2_000;
+    const imagesUntil = Date.now() + 20_000;
+    const timer = window.setInterval(() => {
+      measure();
+      const imagesDone = imgs.every((i) => i.complete) || Date.now() > imagesUntil;
+      if (imagesDone && Date.now() > settleUntil) window.clearInterval(timer);
+    }, 250);
     stopWatch.current = () => { ro.disconnect(); window.clearInterval(timer); };
   }, []);
 
   return (
     <iframe
+      key={frameKey}
       ref={ref}
       title="Message content"
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
