@@ -7,7 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
-import { selectOpenRow, useStore, patchRows, accountById, setUi, undoLast } from "../../lib/store";
+import { selectOpenRow, useStore, patchRows, accountById, togglePanel, undoLast } from "../../lib/store";
 import type { Attachment, MessageFull, MessageSummary } from "../../lib/types";
 import { bytes, cn, displayName, formatAddress, fullDate, listDate } from "../../lib/utils";
 import { Avatar, EmptyState, Menu, Skeleton, Spinner } from "../../components/ui/misc";
@@ -37,17 +37,34 @@ export function Reader({ dark, maximized, onToggleMax }: { dark: boolean; maximi
   return <Conversation key={row.id} row={row} dark={dark} maximized={maximized} onToggleMax={onToggleMax} iwPanel={iwPanel} />;
 }
 
+/** True once `loading` has lasted `ms`. Opening an email used to paint a placeholder, then a second one, then the
+ *  message, even when it loaded at once — a flash on every click (Paul, 29 Oct 2026). Loads quicker than this show
+ *  nothing; slower ones get the skeleton. */
+function useSlow(loading: boolean, ms = 300): boolean {
+  const [slow, setSlow] = React.useState(false);
+  React.useEffect(() => {
+    if (!loading) { setSlow(false); return; }
+    const t = setTimeout(() => setSlow(true), ms);
+    return () => clearTimeout(t);
+  }, [loading, ms]);
+  return slow;
+}
+
 function Conversation({ row, dark, maximized, onToggleMax, iwPanel }: { row: MessageSummary; dark: boolean; maximized: boolean; onToggleMax: () => void; iwPanel: boolean }) {
-  const [members, setMembers] = React.useState<MessageSummary[] | null>(null);
+  // A single message needs no thread fetch, so it renders on the first paint instead of after a placeholder.
+  const [members, setMembers] = React.useState<MessageSummary[] | null>(() => (row.threadCount > 1 ? null : [row]));
   const [error, setError] = React.useState<string>();
   const iwConnected = useStore((s) => !!s.iw?.connected);
+  const slow = useSlow(!members && !error);
 
   React.useEffect(() => {
+    setError(undefined);
+    if (row.threadCount <= 1) { setMembers([row]); return; }
     let live = true;
     setMembers(null);
-    setError(undefined);
-    const load = row.threadCount > 1 ? api.threadGet(row.threadId, row.accountId) : Promise.resolve([row]);
-    load.then((ms) => live && setMembers(ms.length ? ms : [row])).catch((e) => live && setError((e as { message?: string }).message ?? String(e)));
+    api.threadGet(row.threadId, row.accountId)
+      .then((ms) => live && setMembers(ms.length ? ms : [row]))
+      .catch((e) => live && setError((e as { message?: string }).message ?? String(e)));
     return () => { live = false; };
   }, [row.id, row.threadId, row.threadCount, row.accountId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -63,7 +80,7 @@ function Conversation({ row, dark, maximized, onToggleMax, iwPanel }: { row: Mes
           {error ? (
             <div role="alert" className="mt-6 rounded-table bg-[var(--iw-red-wash)] p-4 text-sm text-[var(--iw-red-text)]">Couldn't load this conversation: {error}</div>
           ) : !members ? (
-            <MessageSkeleton />
+            slow ? <MessageSkeleton /> : null
           ) : (
             <div className="mt-5 space-y-3">
               {members.map((m, i) => (
@@ -152,7 +169,7 @@ function Toolbar({ row, latestId, maximized, onToggleMax, iwPanel, iwConnected }
       <div className="flex-1" />
       <IconButton label={maximized ? "Restore layout" : "Expand reader"} onClick={onToggleMax}>{maximized ? <Minimize2 /> : <Maximize2 />}</IconButton>
       {iwConnected && (
-        <IconButton label={iwPanel ? "Hide IntelligentWolf panel" : "Show IntelligentWolf panel"} shortcut="I" onClick={() => setUi({ iwPanel: !iwPanel })}>
+        <IconButton label={iwPanel ? "Hide IntelligentWolf panel" : "Show IntelligentWolf panel"} shortcut="I" onClick={() => togglePanel("iwPanel")}>
           {iwPanel ? <PanelRightClose /> : <PanelRightOpen />}
         </IconButton>
       )}
@@ -184,6 +201,7 @@ function MessageCard({ summary, defaultOpen, dark, topRowId }: { summary: Messag
   const [remoteLoaded, setRemoteLoaded] = React.useState(false);
   const [details, setDetails] = React.useState(false);
   const settings = useStore((s) => s.settings);
+  const slow = useSlow(open && !full && !error);
 
   React.useEffect(() => {
     if (!open || full) return;
@@ -295,7 +313,7 @@ function MessageCard({ summary, defaultOpen, dark, topRowId }: { summary: Messag
             <button type="button" className="font-semibold underline" onClick={() => { setError(undefined); setFull(null); }}>Try again</button>
           </div>
         ) : !m ? (
-          <div aria-hidden className="space-y-2 py-2"><Skeleton className="h-3 w-full" /><Skeleton className="h-3 w-5/6" /><Skeleton className="h-3 w-2/3" /></div>
+          slow ? <div aria-hidden className="space-y-2 py-2"><Skeleton className="h-3 w-full" /><Skeleton className="h-3 w-5/6" /><Skeleton className="h-3 w-2/3" /></div> : null
         ) : (
           <>
             <MessageBody html={m.html} text={m.text} plainText={m.plainText} remote={remoteLoaded} dark={dark} />

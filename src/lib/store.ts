@@ -50,6 +50,7 @@ export type State = {
     palette: boolean;
     iwConnect: boolean;
     iwPanel: boolean;
+    sidebar: boolean;              // the mailboxes column on the left
     shortcuts: boolean;
     outbox: boolean;
     collapsed: Record<string, boolean>; // account id / folder id → collapsed in sidebar
@@ -76,7 +77,7 @@ let state: State = {
   overview: {},
   selected: [],
   composers: [],
-  ui: { settings: false, addAccount: false, importer: false, palette: false, iwConnect: false, iwPanel: true, shortcuts: false, outbox: false, collapsed: loadCollapsed() },
+  ui: { settings: false, addAccount: false, importer: false, palette: false, iwConnect: false, iwPanel: loadShown("wm.iwPanel"), sidebar: loadShown("wm.sidebar"), shortcuts: false, outbox: false, collapsed: loadCollapsed() },
 };
 
 const listeners = new Set<() => void>();
@@ -93,6 +94,19 @@ function subscribe(l: () => void) { listeners.add(l); return () => { listeners.d
 
 export function useStore<T>(sel: (s: State) => T): T {
   return useSyncExternalStore(subscribe, () => sel(state), () => sel(state));
+}
+
+/** The side panels remember whether they were shown (Paul, 29 Oct 2026: "most of the time i'm just looking at the
+ *  emails themselves"). Per-viewer convenience, so localStorage; shown when nothing is stored or storage fails. */
+function loadShown(key: string): boolean {
+  try { return localStorage.getItem(key) !== "0"; } catch { return true; }
+}
+export function togglePanel(panel: "sidebar" | "iwPanel") {
+  setState((s) => {
+    const shown = !s.ui[panel];
+    try { localStorage.setItem(panel === "sidebar" ? "wm.sidebar" : "wm.iwPanel", shown ? "1" : "0"); } catch { /* per-viewer convenience only */ }
+    return { ui: { ...s.ui, [panel]: shown } };
+  });
 }
 
 function loadCollapsed(): Record<string, boolean> {

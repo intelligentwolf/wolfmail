@@ -114,6 +114,7 @@ export function App() {
 function MailShell({ theme }: { theme: "light" | "dark" }) {
   const readingPane = useStore((s) => s.settings?.readingPane ?? "right");
   const iwOn = useStore((s) => !!s.iw?.connected && s.ui.iwPanel);
+  const sidebarOn = useStore((s) => s.ui.sidebar);
   const openId = useStore((s) => s.openId);
   const isOverview = useStore((s) => s.view.kind === "overview");
   const pimMode = usePim((s) => s.mode);
@@ -146,10 +147,14 @@ function MailShell({ theme }: { theme: "light" | "dark" }) {
   return (
     <div className="h-full bg-surface-inset">
       <PanelGroup direction="horizontal" autoSaveId="wm.layout.h">
-        <Panel id="sidebar" order={1} defaultSize={17} minSize={12} maxSize={30} className="min-w-[210px]">
-          <Sidebar />
-        </Panel>
-        <PanelResizeHandle className={handle} />
+        {sidebarOn && (
+          <>
+            <Panel id="sidebar" order={1} defaultSize={17} minSize={12} maxSize={30} className="min-w-[210px]">
+              <Sidebar />
+            </Panel>
+            <PanelResizeHandle className={handle} />
+          </>
+        )}
         {isOverview ? (
           <Panel id="overview" order={2} minSize={40}><Overview dark={theme === "dark"} /></Panel>
         ) : showReaderOnly ? (

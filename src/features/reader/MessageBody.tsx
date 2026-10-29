@@ -45,6 +45,8 @@ export function textToHtml(text: string): string {
 export function MessageBody({ html, text, plainText, remote, dark }: { html?: string; text?: string; plainText?: boolean; remote: boolean; dark: boolean }) {
   const ref = React.useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = React.useState(40);
+  // Hidden until the first measurement, so the frame doesn't show at 40 px and then jump to the message's height.
+  const [measured, setMeasured] = React.useState(false);
   const plain = plainText ?? !html;
   const doc = React.useMemo(
     () => frameDoc(plain ? (text != null ? textToHtml(text) : html ?? "") : html!, { remote, plain, dark }),
@@ -54,12 +56,17 @@ export function MessageBody({ html, text, plainText, remote, dark }: { html?: st
   // Stops the image watch below when the frame reloads or the reader unmounts.
   const stopWatch = React.useRef<() => void>(() => {});
   React.useEffect(() => () => stopWatch.current(), []);
+  // Should the frame's load event never arrive, show it anyway rather than leave the message invisible.
+  React.useEffect(() => {
+    const t = setTimeout(() => setMeasured(true), 1000);
+    return () => clearTimeout(t);
+  }, []);
 
   const onLoad = React.useCallback(() => {
     stopWatch.current();
     const f = ref.current;
     const d = f?.contentDocument;
-    if (!f || !d) return;
+    if (!f || !d) { setMeasured(true); return; }
     // Measure the body, not the document: documentElement.scrollHeight never drops below the frame's own height,
     // so a frame measured that way can grow but never shrink to fit a one-line message.
     const measure = () => {
@@ -70,6 +77,7 @@ export function MessageBody({ html, text, plainText, remote, dark }: { html?: st
       setHeight(Math.max(24, Math.ceil(b.getBoundingClientRect().height + pad)));
     };
     measure();
+    setMeasured(true); // even when the body couldn't be measured: a frame at the old height beats an invisible one
     const ro = new ResizeObserver(measure);
     ro.observe(d.body);
     // Images finishing late change the height. Their load events never reach a listener inside this script-less frame
@@ -96,7 +104,7 @@ export function MessageBody({ html, text, plainText, remote, dark }: { html?: st
       className={plain ? "w-full border-0 bg-transparent" : "w-full rounded-lg border-0 bg-white"}
       // The frame's color-scheme must match its document's: when they differ WebKit paints an opaque canvas behind
       // the content (white in a dark app), which made plain-text mail light-grey-on-white.
-      style={{ height, colorScheme: plain && dark ? "dark" : "light" }}
+      style={{ height, colorScheme: plain && dark ? "dark" : "light", visibility: measured ? "visible" : "hidden" }}
     />
   );
 }

@@ -3,11 +3,11 @@ import { Command } from "cmdk";
 import * as D from "@radix-ui/react-dialog";
 import {
   Search, PenSquare, Inbox, Star, FileText, Send, Archive, Trash2, Settings, RefreshCw, Moon, Sun, Rows3, Rows2, Folder,
-  UserPlus, Upload, Keyboard, Mail, Link2, Download, Sparkles, LayoutGrid, AppWindow, Undo2,
+  UserPlus, Upload, Keyboard, Mail, Link2, Download, Sparkles, LayoutGrid, AppWindow, Undo2, PanelLeft,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
-import { getState, openComposer, openSearchHit, setUi, setView, undoLast, updateSettings, useStore } from "../../lib/store";
+import { getState, openComposer, openSearchHit, setUi, setView, togglePanel, undoLast, updateSettings, useStore } from "../../lib/store";
 import type { SearchHit } from "../../lib/types";
 import { displayName, listDate } from "../../lib/utils";
 import { Avatar } from "../../components/ui/misc";
@@ -127,11 +127,12 @@ export function CommandPalette() {
                       {settings?.listLayout === "table" ? <Rows2 /> : <Rows3 />} Use the {settings?.listLayout === "table" ? "multi-line" : "table"} message list
                     </Command.Item>
                     <Command.Item value="threads conversations group" onSelect={run(() => updateSettings({ threaded: !settings?.threaded }))} className={item}><Rows3 /> {settings?.threaded ? "Show individual messages" : "Group into conversations"}</Command.Item>
+                    <Command.Item value="mailboxes sidebar folders panel" onSelect={run(() => togglePanel("sidebar"))} className={item}><PanelLeft /> Show / hide the mailboxes</Command.Item>
                     <Command.Item value="add account" onSelect={run(() => setUi({ addAccount: true }))} className={item}><UserPlus /> Add an email account</Command.Item>
                     <Command.Item value="import betterbird thunderbird" onSelect={run(() => setUi({ importer: true }))} className={item}><Download /> Import from Betterbird or Thunderbird</Command.Item>
                     <Command.Item value="outbox queued scheduled" onSelect={run(() => setUi({ outbox: true }))} className={item}><Upload /> Outbox and scheduled mail</Command.Item>
                     {!IW_ENABLED ? null : iw?.connected
-                      ? <Command.Item value="intelligentwolf panel crm" onSelect={run(() => setUi({ iwPanel: !getState().ui.iwPanel }))} className={item}><Sparkles /> Show / hide the IntelligentWolf panel</Command.Item>
+                      ? <Command.Item value="intelligentwolf panel crm" onSelect={run(() => togglePanel("iwPanel"))} className={item}><Sparkles /> Show / hide the IntelligentWolf panel</Command.Item>
                       : <Command.Item value="connect intelligentwolf crm" onSelect={run(() => setUi({ iwConnect: true }))} className={item}><Link2 /> Connect IntelligentWolf</Command.Item>}
                     <Command.Item value="settings preferences" onSelect={run(() => setUi({ settings: "general" }))} className={item}><Settings /> Settings</Command.Item>
                     <Command.Item value="keyboard shortcuts help" onSelect={run(() => setUi({ settings: "shortcuts" }))} className={item}><Keyboard /> Keyboard shortcuts</Command.Item>

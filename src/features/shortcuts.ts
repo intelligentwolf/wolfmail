@@ -1,6 +1,6 @@
 import { api } from "../lib/api";
 import { notify } from "../lib/notify";
-import { getState, moveCursor, openComposer, selectAll, setUi, setView, setState, undoLast } from "../lib/store";
+import { getState, moveCursor, openComposer, selectAll, setUi, setView, setState, togglePanel, undoLast } from "../lib/store";
 import { modKey } from "../lib/utils";
 import { modalOpen } from "../lib/dom";
 import * as A from "./actions";
@@ -37,6 +37,7 @@ export const SHORTCUTS: { keys: string; label: string; group: string }[] = [
   { group: "Act", keys: `${modKey}+A`, label: "Select all in view" },
   { group: "Act", keys: `${modKey}+Z`, label: "Undo the last move or delete (again for the one before)" },
   { group: "App", keys: "F5", label: "Check for new mail" },
+  { group: "App", keys: "[", label: "Show / hide the mailboxes" },
   { group: "App", keys: "I", label: "Show / hide the IntelligentWolf panel" },
   { group: "App", keys: `${modKey}+,`, label: "Settings" },
   { group: "App", keys: "?", label: "Show these shortcuts" },
@@ -125,7 +126,8 @@ export function installShortcuts(): () => void {
       case "b": if (s.selected.length) { e.preventDefault(); window.dispatchEvent(new CustomEvent("wm:snooze-pick")); } return;
       case "u": e.preventDefault(); void A.toggleRead(); return;
       case "v": e.preventDefault(); setUi({ palette: true }); window.dispatchEvent(new CustomEvent("wm:palette-mode", { detail: "move" })); return;
-      case "i": e.preventDefault(); if (s.iw?.connected) setUi({ iwPanel: !s.ui.iwPanel }); return;
+      case "[": e.preventDefault(); togglePanel("sidebar"); return;
+      case "i": e.preventDefault(); if (s.iw?.connected) togglePanel("iwPanel"); return;
       case "?": e.preventDefault(); setUi({ settings: "shortcuts" }); return;
       case "Escape":
         if (s.view.kind === "overview" && s.openId) { e.preventDefault(); setState({ openId: undefined, selected: [] }); return; }
