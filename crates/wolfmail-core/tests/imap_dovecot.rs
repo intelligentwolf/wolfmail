@@ -192,3 +192,33 @@ async fn uidvalidity_change_resets_folder() {
         .unwrap();
     assert_eq!(mids, vec!["x2@x".to_string()]);
 }
+
+/// Empty Trash / Junk (Conn::empty_folder): everything in that folder erased with one STORE 1:* and one EXPUNGE — another
+/// folder untouched; an empty folder answers 0 without sending a STORE.
+#[tokio::test]
+async fn empty_folder_erases_only_that_folder() {
+    let Some((host, port)) = server() else {
+        eprintln!("skipped: set WOLFMAIL_IT_DOVECOT");
+        return;
+    };
+    let user = format!("empty{}", std::process::id());
+    let mut conn = login(&host, port, &user).await;
+    for f in ["JunkT", "KeepT"] {
+        conn.create_folder(f).await.unwrap();
+    }
+    for i in 0..3u32 {
+        conn.append_msg("JunkT", "", &msg(i + 1, &format!("j{i}@x"), None, "Spam")).await.unwrap();
+    }
+    conn.append_msg("KeepT", "", &msg(9, "k@x", None, "Keep me")).await.unwrap();
+    assert_eq!(count(&mut conn, "JunkT").await, 3);
+    assert_eq!(conn.empty_folder("JunkT").await.unwrap(), 3);
+    assert_eq!(count(&mut conn, "JunkT").await, 0);
+    assert_eq!(count(&mut conn, "KeepT").await, 1, "another folder is untouched");
+    assert_eq!(conn.empty_folder("JunkT").await.unwrap(), 0, "an empty folder is fine");
+}
+
+/// How many messages a folder holds on the server.
+async fn count(c: &mut Conn, folder: &str) -> usize {
+    c.select(folder, None).await.unwrap();
+    wolfmail_core::imap::proto::parse_search(&c.raw("UID SEARCH ALL").await.unwrap()).len()
+}

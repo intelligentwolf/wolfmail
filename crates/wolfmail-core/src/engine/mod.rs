@@ -66,6 +66,8 @@ pub(crate) struct Inner {
     pub cfg: EngineConfig,
     pub runners: Mutex<HashMap<String, Arc<AccountHandle>>>,
     pub undo: Mutex<HashMap<String, UndoEntry>>,
+    /// Folders being emptied in the background (engine/accounts.rs folder_empty) — one empty at a time per folder.
+    pub emptying: Mutex<std::collections::HashSet<i64>>,
     pub pair: Mutex<Option<(String, crate::iw::PairStart)>>,
     pub outbox_wake: Notify,
     /// Gmail / Graph API roots (production by default; tests point them at a local mock).
@@ -116,6 +118,7 @@ impl Engine {
                 cfg,
                 runners: Mutex::new(HashMap::new()),
                 undo: Mutex::new(HashMap::new()),
+                emptying: Mutex::new(std::collections::HashSet::new()),
                 pair: Mutex::new(None),
                 outbox_wake: Notify::new(),
                 api_bases,

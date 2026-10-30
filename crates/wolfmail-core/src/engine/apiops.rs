@@ -32,7 +32,7 @@ const CAN_NOT_PURGE_GMAIL: &str = "Gmail removes messages from Trash by itself a
     (the same Google approval IntelligentWolf uses) can move mail to Trash but not erase it for good — empty Trash \
     in Gmail on the web if you need it gone now.";
 
-const CAN_NOT_EMPTY_GMAIL: &str = "Gmail empties Trash and Spam by itself after 30 days. WolfMail's Gmail access (the same Google \
+pub(crate) const CAN_NOT_EMPTY_GMAIL: &str = "Gmail empties Trash and Spam by itself after 30 days. WolfMail's Gmail access (the same Google \
     approval IntelligentWolf uses) can move mail to Trash but not erase it for good — empty them in Gmail on the web if you need it gone now.";
 
 impl Engine {
@@ -572,7 +572,7 @@ impl Engine {
 
     /// Empty Trash / Junk on an API account: Outlook — every message in the folder on the server erased for good
     /// (permanentDelete, a few at a time); Gmail — refused, said why (CAN_NOT_EMPTY_GMAIL). → how many were erased.
-    pub(crate) async fn api_folder_empty(&self, acct: &Account, folder_id: i64) -> Result<usize> {
+    pub(crate) async fn api_folder_empty(&self, acct: &Account, folder_id: i64, progress: &(dyn Fn(usize, usize) + Send + Sync)) -> Result<usize> {
         if backend(acct) == Backend::Gmail {
             return Err(ApiError::invalid("id", CAN_NOT_EMPTY_GMAIL));
         }
@@ -582,12 +582,19 @@ impl Engine {
         let gr = Graph { api: &api, store: self.store(), account_id: &acct.id };
         let ids = gr.folder_message_ids(&remote).await?;
         let n = ids.len();
-        let results = crate::providers::bounded(ids, 4, |rid| {
-            let gr = &gr;
-            async move { gr.permanent_delete(&rid).await }
-        })
-        .await;
-        let failed = results.iter().filter(|r| r.is_err()).count();
+        let (mut done, mut failed) = (0usize, 0usize);
+        progress(0, n);
+        // 50 at a time, so the progress moves and a long empty can be followed.
+        for chunk in ids.chunks(50) {
+            let results = crate::providers::bounded(chunk.to_vec(), 4, |rid| {
+                let gr = &gr;
+                async move { gr.permanent_delete(&rid).await }
+            })
+            .await;
+            failed += results.iter().filter(|r| r.is_err()).count();
+            done += chunk.len();
+            progress(done, n);
+        }
         if failed > 0 {
             return Err(ApiError::internal(format!("{} of {n} messages could not be erased just now — try Empty again.", failed)));
         }

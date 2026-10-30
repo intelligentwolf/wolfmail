@@ -152,6 +152,9 @@ fn parse_id(id: &str, what: &str) -> Result<i64> {
     id.parse().map_err(|_| ApiError::not_found(what))
 }
 
+
+/// Local rows removed per transaction while a folder is emptied (folder_empty_run).
+const EMPTY_BATCH: i64 = 1000;
 impl Engine {
     pub async fn accounts_list(&self) -> Result<Vec<Account>> {
         self.store().read(load_accounts).await
@@ -639,8 +642,11 @@ impl Engine {
     }
 
     /// Empty Trash or Junk (Paul, 30 Oct 2026: "make empty trash and empty spam work"): every message in the folder erased
-    /// for good — on the server and here. Only those two folders; the UI asks first. Gmail can't (api_folder_empty says
-    /// why). → how many were erased.
+    /// for good — on the server and here. Only those two folders; the UI asks first. Gmail can't (CAN_NOT_EMPTY_GMAIL).
+    /// It runs IN THE BACKGROUND (Paul, after emptying a Junk of 84,547 locked WolfMail up: "that emptying needs to be done
+    /// in the background … it needs to have some thing to tell us its emptying"): this checks, starts it and answers at once
+    /// with how many messages are stored here; the work says how it is going as `folder://empty`
+    /// {folderId, name, role, state: running|done|failed, done?, total?, count?, message?}.
     pub async fn folder_empty(&self, id: String) -> Result<usize> {
         let fid = parse_id(&id, "The folder")?;
         let f = self.store().call(move |c| folder_by_id(c, fid)).await?;
@@ -648,9 +654,44 @@ impl Engine {
             return Err(ApiError::invalid("id", "Only Trash and Junk can be emptied."));
         }
         let acct = self.account(&f.account_id).await?;
-        let n = if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
-            self.api_folder_empty(&acct, fid).await?
+        if crate::providers::backend(&acct) == crate::providers::Backend::Gmail {
+            return Err(ApiError::invalid("id", super::apiops::CAN_NOT_EMPTY_GMAIL));
+        }
+        if !self.inner.emptying.lock().insert(fid) {
+            return Err(ApiError::invalid("id", format!("{} is already being emptied.", f.name)));
+        }
+        let total: i64 = self
+            .store()
+            .call(move |c| Ok(c.query_row("SELECT COUNT(*) FROM messages WHERE folder_id=?1", params![fid], |r| r.get(0))?))
+            .await
+            .unwrap_or(0);
+        let engine = self.clone();
+        tokio::spawn(async move {
+            let r = engine.folder_empty_run(&f, &acct).await;
+            engine.inner.emptying.lock().remove(&fid);
+            let ev = match &r {
+                Ok(n) => serde_json::json!({ "folderId": f.id, "name": f.name, "role": f.role, "state": "done", "count": n }),
+                Err(e) => serde_json::json!({ "folderId": f.id, "name": f.name, "role": f.role, "state": "failed", "message": e.message }),
+            };
+            engine.emit("folder://empty", ev);
+            engine.emit("mail://changed", serde_json::json!({ "folderIds": [f.id] }));
+            engine.emit_counts().await;
+        });
+        Ok(total.max(0) as usize)
+    }
+
+    /// The work of an empty: the server first (IMAP: one STORE + EXPUNGE; Outlook: permanentDelete, 50 at a time), then the
+    /// copies here, EMPTY_BATCH rows per short transaction so sync and the list are never held up for long. → how many
+    /// messages the server erased.
+    async fn folder_empty_run(&self, f: &Folder, acct: &Account) -> Result<usize> {
+        let fid = parse_id(&f.id, "The folder")?;
+        let say = |done: usize, total: usize| {
+            self.emit("folder://empty", serde_json::json!({ "folderId": f.id, "name": f.name, "role": f.role, "state": "running", "done": done, "total": total }));
+        };
+        let n = if crate::providers::backend(acct) != crate::providers::Backend::Imap {
+            self.api_folder_empty(acct, fid, &say).await?
         } else {
+            say(0, 0);
             let path = f.path.clone();
             self.with_interactive(&f.account_id, move |conn| {
                 let p = path.clone();
@@ -658,21 +699,30 @@ impl Engine {
             })
             .await?
         };
-        self.store()
-            .call(move |c| {
-                let ids: Vec<i64> = {
-                    let mut st = c.prepare("SELECT id FROM messages WHERE folder_id=?1")?;
-                    let v = st.query_map(params![fid], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
-                    v
-                };
-                for i in ids {
-                    crate::msgstore::delete_row(c, i)?;
-                }
-                Ok(())
-            })
-            .await?;
-        self.emit("mail://changed", serde_json::json!({ "folderIds": [id] }));
-        self.emit_counts().await;
+        let mut removed = 0usize;
+        loop {
+            let k = self
+                .store()
+                .call(move |c| {
+                    let tx = c.transaction()?;
+                    let ids: Vec<i64> = {
+                        let mut st = tx.prepare("SELECT id FROM messages WHERE folder_id=?1 LIMIT ?2")?;
+                        let v = st.query_map(params![fid, EMPTY_BATCH], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+                        v
+                    };
+                    for i in &ids {
+                        crate::msgstore::delete_row(&tx, *i)?;
+                    }
+                    tx.commit()?;
+                    Ok(ids.len())
+                })
+                .await?;
+            if k == 0 {
+                break;
+            }
+            removed += k;
+            say(n.max(removed), n.max(removed));
+        }
         Ok(n)
     }
 

@@ -19,6 +19,7 @@ import { dailyUpdateCheck } from "./lib/updates";
 import { modalOpen } from "./lib/dom";
 import { SnoozeHost } from "./features/snooze/SnoozeHost";
 import { OAuthHost } from "./features/accounts/OAuthHost";
+import { EmptyProgress } from "./features/list/EmptyFolder";
 import { startFilterFromMessage } from "./features/settings/FiltersPage";
 import type { MessageSummary } from "./lib/types";
 import { events } from "./lib/api";
@@ -123,6 +124,7 @@ export function App() {
       <OutboxDialog />
       <SnoozeHost />
       <OAuthHost />
+      <EmptyProgress />
       {ready && !bootError && !vaultLocked && !isOverviewWindow() && <PimLayer />}
       {IW_ENABLED && ready && !bootError && !vaultLocked && !isOverviewWindow() && hasAccounts && pimMode === "mail" && <Assistant />}
       {IW_ENABLED && <UpdateContactHost />}

@@ -59,13 +59,19 @@ impl Conn {
         self.expunge_uids(uids).await
     }
 
-    /// Empty a folder (Trash, Junk): every message in it marked \Deleted and expunged. → how many there were. An empty folder
-    /// sends no STORE (some servers refuse a UID set that matches nothing).
+    /// Empty a folder (Trash, Junk): every message in it marked \Deleted and expunged. → how many there were. One STORE over
+    /// the whole folder (UID 1:*) and one EXPUNGE, never a list of every UID — Junk can hold 80,000+ messages (measured on
+    /// Paul's lonewolf@wolfterritories.org, 30 Oct 2026: 84,547), and a command naming them all is too long for some servers.
+    /// The whole folder is meant (RFC 3501 §6.4.3: EXPUNGE removes every \Deleted message in the selected mailbox). An empty
+    /// folder sends no STORE (some servers refuse a set that matches nothing).
     pub async fn empty_folder(&mut self, path: &str) -> Result<usize> {
         self.select(path, None).await?;
-        let uids = super::proto::parse_search(&self.raw("UID SEARCH ALL").await?);
-        self.delete_uids(path, &uids).await?;
-        Ok(uids.len())
+        let n = super::proto::parse_search(&self.raw("UID SEARCH ALL").await?).len();
+        if n > 0 {
+            self.raw("UID STORE 1:* +FLAGS.SILENT (\\Deleted)").await?;
+            self.raw("EXPUNGE").await?;
+        }
+        Ok(n)
     }
 
     async fn expunge_uids(&mut self, uids: &[u32]) -> Result<()> {

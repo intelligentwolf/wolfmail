@@ -556,8 +556,16 @@ async fn graph_account_end_to_end() {
     engine.messages_trash(vec![a2.id.clone()]).await.unwrap();
     assert_eq!(st.lock().purged, vec!["A2".to_string()]);
 
-    // Empty Junk: every message in the folder on the server erased for good (both pages); only Trash and Junk can be emptied.
-    assert_eq!(engine.folder_empty(f("Junk Email").id.clone()).await.unwrap(), 3);
+    // Empty Junk, in the background: the call answers at once; every message in the folder on the server is erased for good
+    // (both pages), said as folder://empty running → done with the count; only Trash and Junk can be emptied, one empty at a time.
+    let junk = f("Junk Email").id.clone();
+    engine.folder_empty(junk.clone()).await.unwrap();
+    let done = wait_for("graph empty", 20, || async {
+        events.find("folder://empty").into_iter().find(|e| e["state"] == "done" && e["folderId"] == junk.as_str())
+    })
+    .await;
+    assert_eq!(done["count"], 3);
+    assert!(events.find("folder://empty").iter().any(|e| e["state"] == "running" && e["total"] == 3), "progress is said");
     let mut purged = st.lock().purged.clone();
     purged.sort();
     assert_eq!(purged, vec!["A2", "J1", "J2", "J3"]);
