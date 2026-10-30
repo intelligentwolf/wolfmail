@@ -46,7 +46,7 @@ domain can't be \*.onmicrosoft.com". In the meantime, users in many work and sch
 all**: unverified multi-tenant apps registered after 8 Nov 2020 that ask for more than sign-in and profile are
 blocked when risk-based step-up consent is on. Mail.ReadWrite counts.
 
-**Status (30 Oct 2026):** the custom domain `intelligentwolf.com` is added. Waiting for Microsoft to verify
+**Status (30 Oct 2026):** the custom domain `intelligentwolf.com` is added. Company verification (verification.microsoft.com): contact and identity verified 29 Oct; business verification in progress on Microsoft's side, ETA 3 Nov 2026 (domain proof: the Namecheap record). Waiting for Microsoft to verify
 IntelligentWolf Ltd as a company (partner program, step 3). When that comes through, do steps 4–6.
 
 ### Steps
