@@ -79,8 +79,8 @@ pub fn insert_message(conn: &Connection, m: &NewMessage<'_>) -> Result<i64> {
     conn.execute(
         "INSERT INTO messages(account_id, folder_id, uid, message_id, thread_id, in_reply_to, refs, subject, base_subject,
             from_name, from_email, to_json, cc_json, bcc_json, reply_to_json, date, seen, flagged, answered, forwarded, draft,
-            keywords, has_attachments, size, modseq, gm_thrid, gm_msgid, list_unsub_json, auth_json)
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29)",
+            keywords, has_attachments, size, modseq, gm_thrid, gm_msgid, list_unsub_json, auth_json, bulk)
+         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30)",
         params![
             m.account_id,
             m.folder_id,
@@ -111,6 +111,7 @@ pub fn insert_message(conn: &Connection, m: &NewMessage<'_>) -> Result<i64> {
             m.gm_msgid.map(|v| v as i64),
             m.header.list_unsubscribe.as_ref().map(serde_json::to_string).transpose()?,
             m.header.auth_results.as_ref().map(serde_json::to_string).transpose()?,
+            m.header.bulk,
         ],
     )?;
     let id = conn.last_insert_rowid();
@@ -214,11 +215,14 @@ pub fn delete_row(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Columns 0–20 read by `row_to_summary` (20 = snoozed_until). Queries that add their own columns after these
-/// start reading at index 21.
+/// Columns 0–21 read by `row_to_summary` (20 = snoozed_until, 21 = person). Queries that add their own columns after
+/// these start reading at index 22 (SUMMARY_NEXT).
+/// person: written by a person — not bulk or machine mail (mime::is_bulk), or from someone this account has written to.
 pub const SUMMARY_COLS: &str = "m.id, m.account_id, m.folder_id, m.thread_id, m.message_id, m.subject, m.from_name, m.from_email,
     m.to_json, m.cc_json, m.date, m.snippet, m.seen, m.flagged, m.answered, m.forwarded, m.draft, m.keywords,
-    m.has_attachments, m.size, (SELECT sz.until_ms FROM snoozes sz WHERE sz.message_rowid = m.id)";
+    m.has_attachments, m.size, (SELECT sz.until_ms FROM snoozes sz WHERE sz.message_rowid = m.id),
+    (m.bulk = 0 OR EXISTS (SELECT 1 FROM correspondents cr WHERE cr.account_id = m.account_id AND cr.email = m.from_email))";
+pub const SUMMARY_NEXT: usize = 22;
 
 pub fn row_to_summary(r: &Row<'_>, thread_count: i64, thread_unread: i64) -> rusqlite::Result<MessageSummary> {
     let kw: String = r.get(17)?;
@@ -244,6 +248,7 @@ pub fn row_to_summary(r: &Row<'_>, thread_count: i64, thread_unread: i64) -> rus
         thread_count,
         thread_unread,
         snoozed_until: r.get(20)?,
+        person: r.get(21)?,
     })
 }
 
@@ -407,8 +412,8 @@ pub fn list_view(conn: &Connection, q: &ViewQuery) -> Result<MessagePage> {
         let mut stmt = conn.prepare(&sql)?;
         let items = stmt
             .query_map(params_from_iter(ps.iter()), |r| {
-                let n: i64 = r.get(21)?;
-                let u: i64 = r.get(22)?;
+                let n: i64 = r.get(SUMMARY_NEXT)?;
+                let u: i64 = r.get(SUMMARY_NEXT + 1)?;
                 row_to_summary(r, n, u)
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -436,7 +441,7 @@ pub fn thread_messages(conn: &Connection, account_id: &str, thread_id: &str) -> 
          ORDER BY m.date ASC, m.id ASC"
     ))?;
     let rows = stmt
-        .query_map(params![account_id, thread_id], |r| Ok((row_to_summary(r, 1, 0)?, r.get::<_, String>(21)?)))?
+        .query_map(params![account_id, thread_id], |r| Ok((row_to_summary(r, 1, 0)?, r.get::<_, String>(SUMMARY_NEXT)?)))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     let mut out: Vec<(MessageSummary, String)> = Vec::new();
     for (m, role) in rows {
@@ -529,6 +534,50 @@ mod tests {
             date: Some(date),
             ..Default::default()
         }
+    }
+
+    /// The list's "written by a person" (SUMMARY_COLS person): bulk mail is not; a person's mail is; and bulk-looking mail
+    /// from someone this account has written to (correspondents, filled by the Sent trigger) still is.
+    #[test]
+    fn person_flag() {
+        let s = Store::open_in_memory().unwrap();
+        s.with(|c| {
+            seed(c);
+            c.execute_batch("INSERT INTO folders(id,account_id,path,name,role) VALUES (3,'a','Sent','Sent','sent');").unwrap();
+            let mk = |folder, uid, from: &str, to: &str, bulk: bool| NewMessage {
+                account_id: "a",
+                folder_id: folder,
+                uid,
+                header: HeaderInfo {
+                    subject: "S".into(),
+                    from: Address { name: None, email: from.into() },
+                    to: vec![Address { name: None, email: to.into() }],
+                    date: Some(1000 + uid as i64),
+                    bulk,
+                    ..Default::default()
+                },
+                flags: ParsedFlags::default(),
+                size: 1,
+                internal_date: None,
+                has_attachments: false,
+                modseq: None,
+                gm_thrid: None,
+                gm_msgid: None,
+                ext_thread: None,
+            };
+            let news = insert_message(c, &mk(1, 1, "news@shop.example", "a@x", true))?;
+            let ann = insert_message(c, &mk(1, 2, "ann@example.com", "a@x", false))?;
+            let bob = insert_message(c, &mk(1, 3, "bob@list.example", "a@x", true))?;
+            assert!(!get_summary(c, news)?.person);
+            assert!(get_summary(c, ann)?.person);
+            assert!(!get_summary(c, bob)?.person);
+            // The account writes to Bob: from then on his mail counts as a person's, list headers or not.
+            insert_message(c, &mk(3, 4, "a@x", "Bob@List.example", false))?;
+            assert!(get_summary(c, bob)?.person);
+            assert!(!get_summary(c, news)?.person);
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]

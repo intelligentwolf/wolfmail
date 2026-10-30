@@ -59,6 +59,15 @@ impl Conn {
         self.expunge_uids(uids).await
     }
 
+    /// Empty a folder (Trash, Junk): every message in it marked \Deleted and expunged. → how many there were. An empty folder
+    /// sends no STORE (some servers refuse a UID set that matches nothing).
+    pub async fn empty_folder(&mut self, path: &str) -> Result<usize> {
+        self.select(path, None).await?;
+        let uids = super::proto::parse_search(&self.raw("UID SEARCH ALL").await?);
+        self.delete_uids(path, &uids).await?;
+        Ok(uids.len())
+    }
+
     async fn expunge_uids(&mut self, uids: &[u32]) -> Result<()> {
         if self.has("UIDPLUS") {
             self.raw(&format!("UID EXPUNGE {}", uid_set(uids))).await?;

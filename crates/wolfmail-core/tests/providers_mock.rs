@@ -317,6 +317,9 @@ async fn gmail_account_end_to_end() {
     assert_eq!(engine.messages_list(q_inbox()).await.unwrap().total, 1);
     let e = engine.messages_trash(vec![m2.id.clone()]).await.unwrap_err();
     assert!(e.message.contains("Trash"), "{e:?}");
+    // Empty Trash / Spam is refused the same way (gmail.modify cannot erase), saying Gmail empties them itself; nothing is lost here.
+    let e = engine.folder_empty(f("Trash").id.clone()).await.unwrap_err();
+    assert!(e.message.contains("30 days"), "{e:?}");
 
     // New mail arrives through history.list on the next pass.
     {
@@ -464,6 +467,17 @@ async fn graph_account_end_to_end() {
         ResponseTemplate::new(204)
     }).mount(&server).await;
     Mock::given(method("POST")).and(path(format!("{b}/sendMail"))).respond_with(ResponseTemplate::new(202)).mount(&server).await;
+    // Junk on the server for Empty: two pages (nextLink), three messages — not all of them stored locally.
+    let u = uri.clone();
+    Mock::given(method("GET")).and(path(format!("{b}/mailFolders/F-JU/messages"))).respond_with(move |r: &Request| {
+        let q: Vec<(String, String)> = r.url.query_pairs().into_owned().collect();
+        assert!(q.iter().any(|(k, v)| k == "$select" && v == "id"), "lists ids only");
+        if q.iter().any(|(k, _)| k == "$skiptoken") {
+            return ResponseTemplate::new(200).set_body_json(json!({ "value": [{ "id": "J3" }] }));
+        }
+        ResponseTemplate::new(200).set_body_json(json!({ "value": [{ "id": "J1" }, { "id": "J2" }],
+            "@odata.nextLink": format!("{u}/graph/me/mailFolders/F-JU/messages?$select=id&$skiptoken=p2") }))
+    }).mount(&server).await;
     let s = st.clone();
     Mock::given(method("POST")).and(path(format!("{b}/messages"))).respond_with(move |_: &Request| {
         let mut st = s.lock();
@@ -541,6 +555,14 @@ async fn graph_account_end_to_end() {
     assert_eq!(st.lock().moves.last().unwrap(), &("A2".to_string(), "deleteditems".to_string()));
     engine.messages_trash(vec![a2.id.clone()]).await.unwrap();
     assert_eq!(st.lock().purged, vec!["A2".to_string()]);
+
+    // Empty Junk: every message in the folder on the server erased for good (both pages); only Trash and Junk can be emptied.
+    assert_eq!(engine.folder_empty(f("Junk Email").id.clone()).await.unwrap(), 3);
+    let mut purged = st.lock().purged.clone();
+    purged.sort();
+    assert_eq!(purged, vec!["A2", "J1", "J2", "J3"]);
+    let e = engine.folder_empty(f("Inbox").id.clone()).await.unwrap_err();
+    assert!(e.message.contains("Only Trash and Junk"), "{e:?}");
 
     // Incremental: a new message and a removal in the next delta round.
     st.lock().pending_inbox = vec![gmsg("A3", "Third", false), json!({ "id": "A1", "@removed": { "reason": "deleted" } })];

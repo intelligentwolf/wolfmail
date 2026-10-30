@@ -263,6 +263,10 @@ async fn folder_delete(s: State<'_, AppState>, id: String) -> R<()> {
     s.on(move |e| async move { e.folder_delete(id).await }).await
 }
 #[tauri::command]
+async fn folder_empty(s: State<'_, AppState>, id: String) -> R<usize> {
+    s.on(move |e| async move { e.folder_empty(id).await }).await
+}
+#[tauri::command]
 async fn folder_mark_read(s: State<'_, AppState>, id: String) -> R<()> {
     s.on(move |e| async move { e.folder_mark_read(id).await }).await
 }
@@ -621,6 +625,7 @@ pub fn run() {
             folder_rename,
             folder_delete,
             folder_mark_read,
+            folder_empty,
             messages_list,
             thread_get,
             message_get,

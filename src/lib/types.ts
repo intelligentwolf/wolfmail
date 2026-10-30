@@ -39,6 +39,8 @@ export type MessageSummary = {
   snippet: string; flags: Flags; tags: string[]; hasAttachments: boolean; size: number;
   threadCount: number; threadUnread: number;
   snoozedUntil?: number; // unix ms; set while snoozed on this computer
+  /** Written by a person — not a newsletter, advert, notification or other bulk mail, or from someone this account writes to (engine msgstore SUMMARY_COLS). */
+  person?: boolean;
 };
 
 export type Attachment = { id: string; filename: string; mime: string; size: number; inline: boolean; contentId?: string };

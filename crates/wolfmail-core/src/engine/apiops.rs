@@ -32,6 +32,9 @@ const CAN_NOT_PURGE_GMAIL: &str = "Gmail removes messages from Trash by itself a
     (the same Google approval IntelligentWolf uses) can move mail to Trash but not erase it for good — empty Trash \
     in Gmail on the web if you need it gone now.";
 
+const CAN_NOT_EMPTY_GMAIL: &str = "Gmail empties Trash and Spam by itself after 30 days. WolfMail's Gmail access (the same Google \
+    approval IntelligentWolf uses) can move mail to Trash but not erase it for good — empty them in Gmail on the web if you need it gone now.";
+
 impl Engine {
     pub(crate) async fn api_client(&self, acct: &Account) -> Result<ApiClient> {
         let token = oauth::access_token(&self.inner.http, self.inner.secrets.as_ref(), &acct.email).await.map_err(|e| e.with_account(&acct.id))?;
@@ -565,6 +568,30 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    /// Empty Trash / Junk on an API account: Outlook — every message in the folder on the server erased for good
+    /// (permanentDelete, a few at a time); Gmail — refused, said why (CAN_NOT_EMPTY_GMAIL). → how many were erased.
+    pub(crate) async fn api_folder_empty(&self, acct: &Account, folder_id: i64) -> Result<usize> {
+        if backend(acct) == Backend::Gmail {
+            return Err(ApiError::invalid("id", CAN_NOT_EMPTY_GMAIL));
+        }
+        let (_, remote, _, _) = self.store().call(move |c| store::folder_remote(c, folder_id)).await?;
+        let remote = remote.ok_or_else(|| ApiError::not_found("The folder on the server"))?;
+        let api = self.api_client(acct).await?;
+        let gr = Graph { api: &api, store: self.store(), account_id: &acct.id };
+        let ids = gr.folder_message_ids(&remote).await?;
+        let n = ids.len();
+        let results = crate::providers::bounded(ids, 4, |rid| {
+            let gr = &gr;
+            async move { gr.permanent_delete(&rid).await }
+        })
+        .await;
+        let failed = results.iter().filter(|r| r.is_err()).count();
+        if failed > 0 {
+            return Err(ApiError::internal(format!("{} of {n} messages could not be erased just now — try Empty again.", failed)));
+        }
+        Ok(n)
     }
 
     pub(crate) async fn api_folder_mark_read(&self, acct: &Account, folder_id: i64) -> Result<()> {

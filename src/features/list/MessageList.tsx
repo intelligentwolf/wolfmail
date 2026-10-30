@@ -21,6 +21,7 @@ import { Button, IconButton } from "../../components/ui/button";
 import * as A from "../actions";
 import { MoveMenuItems } from "./MoveMenu";
 import { SnoozeItems } from "../snooze/SnoozeMenu";
+import { EmptyFolderStrip, canEmpty } from "./EmptyFolder";
 import { LayoutMenu } from "../layout/LayoutMenu";
 
 const viewTitles: Record<string, string> = {
@@ -65,6 +66,10 @@ export function MessageList() {
   const selectedSet = React.useMemo(() => new Set(selected), [selected]);
   const showAccount = view.kind === "unified" && accountsCount > 1;
   const isDraftView = (view.kind === "unified" && view.unified === "drafts") || folder?.role === "drafts";
+  // Mail from a person stands out, bulk mail steps back (Paul, 30 Oct 2026: "highlight emails that are NOT junky or subscriptions
+  // or advertising") — where there is mail to sort: not Sent, Drafts, Junk or Trash.
+  const quietRole = (r?: string | null) => r === "sent" || r === "drafts" || r === "junk" || r === "trash";
+  const highlight = view.kind === "unified" ? !quietRole(view.unified) : view.kind === "overview" || !quietRole(folder?.role);
   const filtered = !!search.trim() || Object.values(filter).some(Boolean);
 
   return (
@@ -83,6 +88,7 @@ export function MessageList() {
         <QuickFilter />
       </header>
 
+      {folder && canEmpty(folder) && list.total > 0 && <EmptyFolderStrip folder={folder} account={account} />}
       {selected.length > 1 && <BulkBar count={selected.length} />}
 
       <div
@@ -121,7 +127,7 @@ export function MessageList() {
               const m = list.items[vi.index];
               return (
                 <div key={m.id} style={{ position: "absolute", top: 0, left: 0, right: 0, height: vi.size, transform: `translateY(${vi.start + (layout === "table" ? 28 : 0)}px)` }}>
-                  <Row m={m} layout={layout} compact={compact} selected={selectedSet.has(m.id)} isCursor={cursor === m.id} showAccount={showAccount} isDraft={isDraftView} />
+                  <Row m={m} layout={layout} compact={compact} selected={selectedSet.has(m.id)} isCursor={cursor === m.id} showAccount={showAccount} isDraft={isDraftView} highlight={highlight} />
                 </div>
               );
             })}
@@ -269,11 +275,14 @@ function BulkBar({ count }: { count: number }) {
 }
 
 const Row = React.memo(function Row({
-  m, layout, compact, selected, isCursor, showAccount, isDraft,
-}: { m: MessageSummary; layout: "multiline" | "table"; compact: boolean; selected: boolean; isCursor: boolean; showAccount: boolean; isDraft: boolean }) {
+  m, layout, compact, selected, isCursor, showAccount, isDraft, highlight,
+}: { m: MessageSummary; layout: "multiline" | "table"; compact: boolean; selected: boolean; isCursor: boolean; showAccount: boolean; isDraft: boolean; highlight: boolean }) {
   const tags = useStore((s) => s.tags);
   const account = accountById(m.accountId);
   const unread = !m.flags.seen || m.threadUnread > 0;
+  // A person's mail: the engine's person flag (not bulk or machine mail, or from someone this account writes to).
+  const person = highlight && m.person;
+  const bulk = highlight && !m.person;
   const sentView = useStore((s) => (s.view.kind === "unified" ? s.view.unified === "sent" : folderById((s.view as { folderId: string }).folderId)?.role === "sent"));
   const who = sentView || isDraft ? (m.to.length ? m.to.map((a) => displayName(a)).join(", ") : "(no recipients)") : displayName(m.from);
   const mtags = m.tags.map((k) => tags.find((t) => t.key === k)).filter(Boolean) as { key: string; name: string; color: string }[];
@@ -329,7 +338,7 @@ const Row = React.memo(function Row({
     layout === "table" ? (
       <div className="grid h-full grid-cols-[28px_minmax(140px,1.1fr)_minmax(200px,3fr)_86px] items-center gap-0 px-3 text-[13px]">
         {star}
-        <span className={cn("flex min-w-0 items-center gap-2 truncate pr-3", unread && "font-semibold")}>
+        <span className={cn("flex min-w-0 items-center gap-2 truncate pr-3", unread && "font-semibold", bulk && "text-muted-foreground")}>
           {showAccount && account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: account.color }} />}
           <span className="truncate">{who}</span>
           {iwMatch && <IwBadge match={iwMatch} />}
@@ -337,7 +346,7 @@ const Row = React.memo(function Row({
         </span>
         <span className="flex min-w-0 items-center gap-2 pr-3">
           {mtags.map((t) => <span key={t.key} className="size-2 shrink-0 rounded-full" style={{ background: t.color }} title={t.name} />)}
-          <span className={cn("truncate", unread && "font-semibold")}>{m.subject || "(no subject)"}</span>
+          <span className={cn("truncate", unread && "font-semibold", bulk && "text-muted-foreground")}>{m.subject || "(no subject)"}</span>
           <span className="truncate text-muted-foreground">— {m.snippet}</span>
         </span>
         <span className={cn("flex items-center justify-end gap-1.5 text-xs tabular-nums", unread ? "font-semibold text-foreground" : "text-muted-foreground")}>
@@ -357,7 +366,8 @@ const Row = React.memo(function Row({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             {unread && <span aria-hidden className="size-2 shrink-0 rounded-full bg-[var(--iw-red)]" />}
-            <span className={cn("min-w-0 truncate text-[13.5px]", unread ? "font-semibold" : "font-medium text-foreground/85")}>{who}</span>
+            <span className={cn("min-w-0 truncate text-[13.5px]", unread ? "font-semibold" : "font-medium text-foreground/85", bulk && "text-muted-foreground")}>{who}</span>
+            {person && <span className="sr-only">(from a person)</span>}
             {iwMatch && <IwBadge match={iwMatch} />}
             {m.threadCount > 1 && (
               <span className="shrink-0 rounded-full bg-surface-raised px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground ring-1 ring-border">{m.threadCount}</span>
@@ -378,7 +388,7 @@ const Row = React.memo(function Row({
             )}
           </div>
           <div className="mt-0.5 flex items-center gap-2">
-            <span className={cn("min-w-0 truncate text-[13px]", unread ? "font-semibold text-foreground" : "text-foreground/80")}>{m.subject || "(no subject)"}</span>
+            <span className={cn("min-w-0 truncate text-[13px]", unread ? "font-semibold text-foreground" : "text-foreground/80", bulk && "text-muted-foreground")}>{m.subject || "(no subject)"}</span>
             <div className="flex-1" />
             {star}
           </div>
@@ -409,8 +419,9 @@ const Row = React.memo(function Row({
           onDoubleClick={onDouble}
           className={cn(
             "group relative h-full cursor-default border-b border-border/60 transition-colors duration-[var(--dur-fast)]",
-            selected ? "bg-select-strong" : "hover:bg-accent/70",
-            isCursor && "shadow-[inset_3px_0_0_var(--iw-red)]",
+            selected ? "bg-select-strong" : person ? "bg-[var(--person-wash)] hover:bg-accent/70" : "hover:bg-accent/70",
+            // The person bar sits under the cursor's red bar (both inset on the left); the cursor wins where they meet.
+            isCursor ? "shadow-[inset_3px_0_0_var(--iw-red)]" : person && "shadow-[inset_3px_0_0_var(--person)]",
           )}
         >
           {body}

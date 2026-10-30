@@ -37,7 +37,10 @@ const INBOX_PAGES: usize = 10;
 const OTHER_PAGES: usize = 3;
 const BODY_PREFETCH_PER_PASS: i64 = 50;
 /// Properties requested from delta (Source: message resource property names).
-const SELECT: &str = "subject,from,toRecipients,ccRecipients,bccRecipients,replyTo,receivedDateTime,sentDateTime,internetMessageId,conversationId,isRead,isDraft,flag,categories,hasAttachments,bodyPreview";
+// inferenceClassification (Microsoft Graph v1.0 message resource: "focused" or "other" — Outlook's Focused Inbox): "other" is
+// newsletters, adverts and automated mail, so it marks a message bulk (mime::is_bulk). A delta link saved before this keeps
+// its old $select until its next round starts.
+const SELECT: &str = "subject,from,toRecipients,ccRecipients,bccRecipients,replyTo,receivedDateTime,sentDateTime,internetMessageId,conversationId,isRead,isDraft,flag,categories,hasAttachments,bodyPreview,inferenceClassification";
 
 /// Well-known folder names → WolfMail roles.
 pub const WELL_KNOWN: &[(&str, FolderRole)] = &[
@@ -115,6 +118,7 @@ pub struct GraphMessage {
     pub categories: Option<Vec<String>>,
     pub has_attachments: Option<bool>,
     pub body_preview: Option<String>,
+    pub inference_classification: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -180,7 +184,13 @@ pub fn header_from(m: &GraphMessage) -> HeaderInfo {
         list_unsubscribe: None,
         auth_results: None,
         multipart_mixed: false,
+        bulk: other_inbox(m) || m.from.as_ref().and_then(addr).is_some_and(|a| crate::mime::automated_sender(&a.email)),
     }
+}
+
+/// Outlook put it in "Other", not "Focused".
+fn other_inbox(m: &GraphMessage) -> bool {
+    m.inference_classification.as_deref().is_some_and(|c| c.eq_ignore_ascii_case("other"))
 }
 
 pub fn flagged(m: &GraphMessage) -> Option<bool> {
@@ -206,6 +216,9 @@ pub fn apply_item(c: &rusqlite::Connection, account_id: &str, folder_id: i64, m:
         }
         if let Some(d) = m.is_draft {
             c.execute("UPDATE messages SET draft=?2 WHERE id=?1", rusqlite::params![row, d])?;
+        }
+        if other_inbox(m) {
+            c.execute("UPDATE messages SET bulk=1 WHERE id=?1", rusqlite::params![row])?;
         }
         if let Some(cats) = &m.categories {
             let keys = store::tag_keys_for_names(c, cats, true)?;
@@ -456,6 +469,25 @@ impl Graph<'_> {
 
     pub async fn delete(&self, remote_id: &str) -> Result<()> {
         self.api.delete(&format!("/me/messages/{remote_id}")).await
+    }
+
+    /// Every message id in a folder, from the server (not only those stored here). Source: Graph "List messages" —
+    /// GET /me/mailFolders/{id}/messages, $select, paged by @odata.nextLink.
+    pub async fn folder_message_ids(&self, remote_folder: &str) -> Result<Vec<String>> {
+        let mut out = Vec::new();
+        let mut url = format!("/me/mailFolders/{remote_folder}/messages?$select=id&$top=100");
+        loop {
+            let page: Value = self.api.get_json(&url, &[]).await?;
+            for m in page["value"].as_array().into_iter().flatten() {
+                if let Some(id) = m["id"].as_str() {
+                    out.push(id.to_string());
+                }
+            }
+            match page["@odata.nextLink"].as_str() {
+                Some(next) => url = next.to_string(),
+                None => return Ok(out),
+            }
+        }
     }
 
     pub async fn permanent_delete(&self, remote_id: &str) -> Result<()> {

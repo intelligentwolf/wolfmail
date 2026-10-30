@@ -25,6 +25,9 @@ pub struct HeaderInfo {
     pub list_unsubscribe: Option<ListUnsubscribe>,
     pub auth_results: Option<AuthResults>,
     pub multipart_mixed: bool,
+    /// Sent in bulk or by a machine — a list, a newsletter, an advert, a notification — not written by a person to
+    /// this person (`is_bulk`). The list highlights the mail that is not (Paul, 30 Oct 2026).
+    pub bulk: bool,
 }
 
 fn addr_list(list: Option<mail_parser::AddressList<'_>>) -> Vec<Address> {
@@ -57,13 +60,21 @@ pub fn parse_headers(raw: &[u8]) -> HeaderInfo {
         parse_list_unsubscribe(&v, raw_header("List-Unsubscribe-Post").as_deref())
     });
     let auth_results = raw_header("Authentication-Results").map(|v| parse_auth_results(&v));
+    let from = addr_list(msg.from()).into_iter().next().unwrap_or_default();
+    let bulk = is_bulk(
+        list_unsubscribe.is_some() || raw_header("List-Id").is_some(),
+        raw_header("Precedence").as_deref(),
+        raw_header("Auto-Submitted").as_deref(),
+        raw_header("Feedback-ID").is_some(),
+        &from.email,
+    );
     let ctype = msg.content_type();
     let multipart_mixed = ctype
         .map(|c| c.ctype().eq_ignore_ascii_case("multipart") && c.subtype().is_some_and(|s| s.eq_ignore_ascii_case("mixed")))
         .unwrap_or(false);
     HeaderInfo {
         subject: msg.subject().unwrap_or("").trim().to_string(),
-        from: addr_list(msg.from()).into_iter().next().unwrap_or_default(),
+        from,
         to: addr_list(msg.to()),
         cc: addr_list(msg.cc()),
         bcc: addr_list(msg.bcc()),
@@ -78,7 +89,28 @@ pub fn parse_headers(raw: &[u8]) -> HeaderInfo {
         list_unsubscribe,
         auth_results,
         multipart_mixed,
+        bulk,
     }
+}
+
+/// Mail sent in bulk or by a machine, from its headers. Sources: RFC 2369 / RFC 2919 (List-Unsubscribe, List-Id: mail
+/// from a list); RFC 3834 §5 (Auto-Submitted: anything but "no" is machine-made); the de-facto Precedence: bulk / list /
+/// junk; Feedback-ID, which Google's sender guidelines ask bulk senders to set. And an address that says it is a machine.
+pub fn is_bulk(list: bool, precedence: Option<&str>, auto_submitted: Option<&str>, feedback_id: bool, from: &str) -> bool {
+    let low = |v: Option<&str>| v.map(|s| s.trim().to_ascii_lowercase());
+    list || feedback_id
+        || low(precedence).is_some_and(|p| matches!(p.as_str(), "bulk" | "list" | "junk"))
+        || low(auto_submitted).is_some_and(|a| !a.is_empty() && a != "no")
+        || automated_sender(from)
+}
+
+/// An address a person doesn't write from: no-reply, notifications, newsletters, bounces and the like. Kept in step with
+/// the same list in db.rs migration v4 (which marks the mail already stored).
+pub fn automated_sender(email: &str) -> bool {
+    let local = email.split('@').next().unwrap_or("").to_ascii_lowercase();
+    const ANYWHERE: &[&str] = &["noreply", "no-reply", "no_reply", "donotreply", "do-not-reply", "do_not_reply", "mailer-daemon", "bounce"];
+    const STARTS: &[&str] = &["notification", "newsletter", "marketing", "promo", "deals", "offers", "updates", "alerts", "digest", "news"];
+    ANYWHERE.iter().any(|w| local.contains(w)) || STARTS.iter().any(|w| local.starts_with(w))
 }
 
 fn unfold(v: &str) -> String {
@@ -544,6 +576,22 @@ pub fn is_reply_subject(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn bulk_mail_is_told_from_a_persons() {
+        let raw = |extra: &str, from: &str| format!("From: {from}\r\nTo: a@x\r\nSubject: S\r\n{extra}\r\nbody");
+        let b = |extra: &str, from: &str| parse_headers(raw(extra, from).as_bytes()).bulk;
+        assert!(!b("", "Ann <ann@example.com>"));
+        assert!(b("List-Unsubscribe: <https://x.example/u>\r\n", "ann@example.com"));
+        assert!(b("List-Id: <team.lists.example>\r\n", "ann@example.com"));
+        assert!(b("Precedence: bulk\r\n", "ann@example.com"));
+        assert!(b("Auto-Submitted: auto-generated\r\n", "ann@example.com"));
+        assert!(!b("Auto-Submitted: no\r\n", "ann@example.com"));
+        assert!(b("Feedback-ID: 1:2:3:esp\r\n", "ann@example.com"));
+        assert!(b("", "Shop <no-reply@shop.example>"));
+        assert!(b("", "newsletter@shop.example"));
+        assert!(!b("", "annews@example.com"), "a person whose name contains 'news' later is not a newsletter");
+    }
+
     use super::*;
 
     const MSG: &[u8] = b"From: \"Ann Example\" <ann@example.com>\r\n\

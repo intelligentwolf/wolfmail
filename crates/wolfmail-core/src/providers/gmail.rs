@@ -258,6 +258,9 @@ pub fn store_labels(c: &rusqlite::Connection, account_id: &str, labels: &[Label]
     Ok((map, all))
 }
 
+/// Gmail's category labels (the tabs) for mail that is not from a person — this file's header lists them.
+const GMAIL_BULK_CATEGORIES: &[&str] = &["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"];
+
 /// Build what the store needs from a messages.get (metadata or minimal) answer.
 pub fn to_api_message(
     c: &rusqlite::Connection,
@@ -268,8 +271,12 @@ pub fn to_api_message(
 ) -> Result<ApiMessage> {
     let headers: Vec<(String, String)> =
         m.payload.as_ref().map(|p| p.headers.iter().map(|h| (h.name.clone(), h.value.clone())).collect()).unwrap_or_default();
-    let header = mime::parse_headers(&store::header_block(&headers));
+    let mut header = mime::parse_headers(&store::header_block(&headers));
     let has = |l: &str| m.label_ids.iter().any(|x| x == l);
+    // Gmail's own tabs: Promotions, Social, Updates and Forums are not mail a person wrote (header's top comment).
+    if GMAIL_BULK_CATEGORIES.iter().any(|c| has(c)) {
+        header.bulk = true;
+    }
     let user_names: Vec<String> = m.label_ids.iter().filter_map(|id| label_names.get(id).cloned()).collect();
     let keywords = store::tag_keys_for_names(c, &user_names, false)?;
     let has_attachments = header.multipart_mixed

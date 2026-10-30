@@ -263,7 +263,7 @@ pub fn store_body_and_headers(c: &Connection, rowid: i64, raw: &[u8]) -> Result<
     c.execute(
         "UPDATE messages SET in_reply_to=COALESCE(?2, in_reply_to), refs=CASE WHEN ?3='[]' THEN refs ELSE ?3 END,
             list_unsub_json=COALESCE(?4, list_unsub_json), auth_json=COALESCE(?5, auth_json),
-            bcc_json=CASE WHEN ?6='[]' THEN bcc_json ELSE ?6 END WHERE id=?1",
+            bcc_json=CASE WHEN ?6='[]' THEN bcc_json ELSE ?6 END, bulk=MAX(bulk, ?7) WHERE id=?1",
         params![
             rowid,
             h.in_reply_to,
@@ -271,6 +271,7 @@ pub fn store_body_and_headers(c: &Connection, rowid: i64, raw: &[u8]) -> Result<
             h.list_unsubscribe.as_ref().map(serde_json::to_string).transpose()?,
             h.auth_results.as_ref().map(serde_json::to_string).transpose()?,
             serde_json::to_string(&h.bcc)?,
+            h.bulk,
         ],
     )?;
     Ok(())

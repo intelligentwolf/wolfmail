@@ -242,6 +242,9 @@ pub struct MessageSummary {
     /// Set while the message is snoozed (unix ms it comes back).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub snoozed_until: Option<i64>,
+    /// Written by a person, not bulk or machine mail — the list highlights it (msgstore SUMMARY_COLS).
+    #[serde(default)]
+    pub person: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

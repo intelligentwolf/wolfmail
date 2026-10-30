@@ -53,6 +53,8 @@ export const api = {
   folderRename: (id: string, name: string) => call<Folder>("folder_rename", { id, name }),
   folderDelete: (id: string) => call<null>("folder_delete", { id }),
   folderMarkRead: (id: string) => call<null>("folder_mark_read", { id }),
+  /** Empty Trash or Junk for good (engine folder_empty). → how many were erased. Gmail accounts are refused (Gmail empties them itself). */
+  folderEmpty: (id: string) => call<number>("folder_empty", { id }),
 
   messagesList: (query: ViewQuery) => call<MessagePage>("messages_list", { query }),
   threadGet: (threadId: string, accountId: string) => call<MessageSummary[]>("thread_get", { threadId, accountId }),

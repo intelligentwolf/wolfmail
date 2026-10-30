@@ -56,6 +56,8 @@ type MessageSummary = {
   snippet: string; flags: Flags; tags: string[]; hasAttachments: boolean; size: number;
   threadCount: number;        // messages in this thread inside the current view (1 when not threaded)
   threadUnread: number;
+  person: boolean;      // written by a person: not bulk/machine mail (List-*, Precedence, Auto-Submitted, Feedback-ID, no-reply senders,
+                        // Gmail's Promotions/Social/Updates/Forums, Outlook's "Other"), or from someone this account has written to
 };
 
 type Attachment = { id: string; filename: string; mime: string; size: number; inline: boolean; contentId?: string };
@@ -145,6 +147,7 @@ type ImportCandidate = {
 | `folder_rename` | `{ id, name }` | `Folder` |
 | `folder_delete` | `{ id }` | `null` |
 | `folder_mark_read` | `{ id }` | `null` |
+| `folder_empty` | `{ id }` | `number` — messages erased for good. Trash and Junk only; `invalid` for any other folder, and for a Gmail-API account (gmail.modify cannot erase; Gmail empties them after 30 days). |
 | `messages_list` | `ViewQuery` | `MessagePage` |
 | `thread_get` | `{ threadId, accountId }` | `MessageSummary[]` (oldest first) |
 | `message_get` | `{ id }` | `MessageFull` (fetches body from server if not cached) |

@@ -15,6 +15,7 @@ import { Ctx, Spinner } from "../../components/ui/misc";
 import { Dialog, ConfirmDialog } from "../../components/ui/dialog";
 import { Input, Field } from "../../components/ui/form";
 import { newDraftFor } from "../compose/drafts";
+import { EmptyFolderDialog, canEmpty, emptyName } from "../list/EmptyFolder";
 import { ModeSwitch } from "../pim/ModeSwitch";
 
 const roleIcon: Record<NonNullable<FolderRole>, React.ComponentType<{ className?: string }>> = {
@@ -248,6 +249,7 @@ function AccountTree({ account, folders }: { account: Account; folders: Folder[]
   const [newFolderFor, setNewFolderFor] = React.useState<Folder | null | undefined>(undefined);
   const [renaming, setRenaming] = React.useState<Folder | null>(null);
   const [deleting, setDeleting] = React.useState<Folder | null>(null);
+  const [emptying, setEmptying] = React.useState<Folder | null>(null);
 
   const byParent = React.useMemo(() => {
     const m = new Map<string | undefined, Folder[]>();
@@ -296,6 +298,7 @@ function AccountTree({ account, folders }: { account: Account; folders: Folder[]
                 .catch((e) => notify.error(e, "Couldn't run filters"))}><Filter /> Run filters on this folder</Ctx.Item>
               <Ctx.Item onSelect={() => setNewFolderFor(f)}><FolderPlus /> New subfolder…</Ctx.Item>
               {!f.role && <Ctx.Item onSelect={() => setRenaming(f)}><Pencil /> Rename…</Ctx.Item>}
+              {canEmpty(f) && <><Ctx.Separator /><Ctx.Item danger onSelect={() => setEmptying(f)}><Trash2 /> Empty {emptyName(f)}…</Ctx.Item></>}
               {!f.role && <><Ctx.Separator /><Ctx.Item danger onSelect={() => setDeleting(f)}><Trash2 /> Delete folder…</Ctx.Item></>}
             </Ctx.Content>
           </Ctx.Root>
@@ -374,6 +377,7 @@ function AccountTree({ account, folders }: { account: Account; folders: Folder[]
           } catch (e) { notify.error(e, "Couldn't delete the folder"); }
         }}
       />
+      <EmptyFolderDialog folder={emptying} account={account} onClose={() => setEmptying(null)} />
     </section>
   );
 }

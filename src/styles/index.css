@@ -66,6 +66,9 @@
   --scrollbar-thumb-hover: rgba(45, 27, 45, 0.28);
   --select-bg: rgba(196, 30, 30, 0.08);
   --select-bg-strong: rgba(196, 30, 30, 0.14);
+  /* Mail written by a person (MessageList): a teal bar and wash — not red, which is the cursor, unread and selection. */
+  --person: #0f766e;
+  --person-wash: rgba(15, 118, 110, 0.06);
   --shadow-card: 0 1px 3px rgba(26, 20, 32, 0.08), 0 6px 16px rgba(26, 20, 32, 0.06);
   --shadow-pop: 0px 20px 24px -4px rgba(16, 24, 40, 0.12), 0px 8px 8px -4px rgba(16, 24, 40, 0.05);
 
@@ -102,6 +105,8 @@
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.25);
   --select-bg: rgba(217, 54, 54, 0.16);
   --select-bg-strong: rgba(217, 54, 54, 0.26);
+  --person: #2dd4bf;
+  --person-wash: rgba(45, 212, 191, 0.07);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 16px rgba(0, 0, 0, 0.28);
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
   color-scheme: dark;

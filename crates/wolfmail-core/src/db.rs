@@ -211,6 +211,60 @@ const MIGRATIONS: &[&str] = &[
         UPDATE folders SET created_at = CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) WHERE id = NEW.id;
     END;
     "#,
+    // v4 — the mail written by a person, highlighted in the list (Paul, 30 Oct 2026: "highlight emails that are NOT junky or
+    // subscriptions or advertising"). bulk: set at sync from the headers (mime::is_bulk), Gmail's own categories and
+    // Outlook's Focused/Other. Mail stored before this is marked from what was kept: a List-Unsubscribe, or an address
+    // that is a machine (the same words as mime::automated_sender). correspondents: everyone this account has written to
+    // (To and Cc of its sent mail) — their mail always counts as a person's, whatever its headers say.
+    r#"
+    ALTER TABLE messages ADD COLUMN bulk INTEGER NOT NULL DEFAULT 0;
+    UPDATE messages SET bulk = 1 WHERE list_unsub_json IS NOT NULL
+        OR substr(from_email, 1, instr(from_email || '@', '@') - 1) LIKE '%noreply%'
+        OR substr(from_email, 1, instr(from_email || '@', '@') - 1) LIKE '%no-reply%'
+        OR substr(from_email, 1, instr(from_email || '@', '@') - 1) LIKE '%no\_reply%' ESCAPE '\'
+        OR substr(from_email, 1, instr(from_email || '@', '@') - 1) LIKE '%donotreply%'
+        OR substr(from_email, 1, instr(from_email || '@', '@') - 1) LIKE '%do-not-reply%'
+        OR substr(from_email, 1, instr(from_email || '@', '@') - 1) LIKE '%do\_not\_reply%' ESCAPE '\'
+        OR substr(from_email, 1, instr(from_email || '@', '@') - 1) LIKE '%mailer-daemon%'
+        OR substr(from_email, 1, instr(from_email || '@', '@') - 1) LIKE '%bounce%'
+        OR from_email LIKE 'notification%' OR from_email LIKE 'newsletter%' OR from_email LIKE 'marketing%'
+        OR from_email LIKE 'promo%' OR from_email LIKE 'deals%' OR from_email LIKE 'offers%' OR from_email LIKE 'updates%'
+        OR from_email LIKE 'alerts%' OR from_email LIKE 'digest%' OR from_email LIKE 'news%';
+    CREATE TABLE correspondents (
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        PRIMARY KEY(account_id, email)
+    ) WITHOUT ROWID;
+    INSERT OR IGNORE INTO correspondents(account_id, email)
+        SELECT m.account_id, lower(json_extract(j.value, '$.email')) FROM messages m, json_each(CASE WHEN json_valid(m.to_json) THEN m.to_json ELSE '[]' END) j
+         WHERE (EXISTS (SELECT 1 FROM folders f WHERE f.id = m.folder_id AND f.role = 'sent')
+            OR EXISTS (SELECT 1 FROM message_labels ml JOIN folders f ON f.id = ml.folder_id WHERE ml.message_rowid = m.id AND f.role = 'sent'))
+           AND json_extract(j.value, '$.email') IS NOT NULL;
+    INSERT OR IGNORE INTO correspondents(account_id, email)
+        SELECT m.account_id, lower(json_extract(j.value, '$.email')) FROM messages m, json_each(CASE WHEN json_valid(m.cc_json) THEN m.cc_json ELSE '[]' END) j
+         WHERE (EXISTS (SELECT 1 FROM folders f WHERE f.id = m.folder_id AND f.role = 'sent')
+            OR EXISTS (SELECT 1 FROM message_labels ml JOIN folders f ON f.id = ml.folder_id WHERE ml.message_rowid = m.id AND f.role = 'sent'))
+           AND json_extract(j.value, '$.email') IS NOT NULL;
+    -- Mail stored in Sent from now on (IMAP and Outlook: its folder; Gmail: its SENT label) adds its recipients.
+    CREATE TRIGGER correspondents_from_sent AFTER INSERT ON messages
+        WHEN EXISTS (SELECT 1 FROM folders f WHERE f.id = NEW.folder_id AND f.role = 'sent') BEGIN
+        INSERT OR IGNORE INTO correspondents(account_id, email)
+            SELECT NEW.account_id, lower(json_extract(j.value, '$.email')) FROM json_each(CASE WHEN json_valid(NEW.to_json) THEN NEW.to_json ELSE '[]' END) j
+             WHERE json_extract(j.value, '$.email') IS NOT NULL;
+        INSERT OR IGNORE INTO correspondents(account_id, email)
+            SELECT NEW.account_id, lower(json_extract(j.value, '$.email')) FROM json_each(CASE WHEN json_valid(NEW.cc_json) THEN NEW.cc_json ELSE '[]' END) j
+             WHERE json_extract(j.value, '$.email') IS NOT NULL;
+    END;
+    CREATE TRIGGER correspondents_from_sent_label AFTER INSERT ON message_labels
+        WHEN EXISTS (SELECT 1 FROM folders f WHERE f.id = NEW.folder_id AND f.role = 'sent') BEGIN
+        INSERT OR IGNORE INTO correspondents(account_id, email)
+            SELECT m.account_id, lower(json_extract(j.value, '$.email')) FROM messages m, json_each(CASE WHEN json_valid(m.to_json) THEN m.to_json ELSE '[]' END) j
+             WHERE m.id = NEW.message_rowid AND json_extract(j.value, '$.email') IS NOT NULL;
+        INSERT OR IGNORE INTO correspondents(account_id, email)
+            SELECT m.account_id, lower(json_extract(j.value, '$.email')) FROM messages m, json_each(CASE WHEN json_valid(m.cc_json) THEN m.cc_json ELSE '[]' END) j
+             WHERE m.id = NEW.message_rowid AND json_extract(j.value, '$.email') IS NOT NULL;
+    END;
+    "#,
 ];
 
 #[derive(Clone)]
@@ -311,6 +365,43 @@ pub fn now_ms() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    /// v4 on a mailbox that already has mail: list mail and machine senders marked bulk, a person's mail not, and the people
+    /// the account wrote to (Sent folder; a Gmail SENT label) remembered.
+    fn v4_marks_stored_mail() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("w.sqlite3");
+        {
+            let s = Store::init(Connection::open(&path).unwrap(), &MIGRATIONS[..3]).unwrap();
+            s.with(|c| {
+                c.execute_batch(
+                    "INSERT INTO accounts(id,name,email,color,provider,imap_json,smtp_json) VALUES ('a','A','a@x','#c41e1e','imap','{}','{}');
+                     INSERT INTO folders(id,account_id,path,name,role) VALUES (1,'a','INBOX','Inbox','inbox'), (2,'a','Sent','Sent','sent'),
+                        (3,'a','[Gmail]/All Mail','All Mail','all'), (4,'a','SENT','Sent label','sent');
+                     INSERT INTO messages(id,account_id,folder_id,uid,thread_id,from_email,date,list_unsub_json) VALUES
+                        (1,'a',1,1,'t1','shop@store.example',1,'{\"http\":\"https://u\"}'),
+                        (2,'a',1,2,'t2','no-reply@bank.example',2,NULL),
+                        (3,'a',1,3,'t3','ann@example.com',3,NULL);
+                     INSERT INTO messages(id,account_id,folder_id,uid,thread_id,from_email,date,to_json,cc_json) VALUES
+                        (4,'a',2,1,'t4','a@x',4,'[{\"email\":\"Bob@Example.com\"}]','[{\"name\":\"C\",\"email\":\"carol@example.com\"}]'),
+                        (5,'a',3,1,'t5','a@x',5,'[{\"email\":\"dan@example.com\"}]','not json');
+                     INSERT INTO message_labels(message_rowid, folder_id) VALUES (5, 4);",
+                )?;
+                Ok(())
+            })
+            .unwrap();
+        }
+        let s = Store::init(Connection::open(&path).unwrap(), MIGRATIONS).unwrap();
+        s.with(|c| {
+            let bulk: Vec<i64> = c.prepare("SELECT bulk FROM messages WHERE id IN (1,2,3) ORDER BY id")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+            assert_eq!(bulk, vec![1, 1, 0]);
+            let people: Vec<String> = c.prepare("SELECT email FROM correspondents ORDER BY email")?.query_map([], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+            assert_eq!(people, vec!["bob@example.com", "carol@example.com", "dan@example.com"]);
+            Ok(())
+        })
+        .unwrap();
+    }
 
     #[test]
     fn migrates_and_seeds_tags() {

@@ -638,6 +638,44 @@ impl Engine {
         Ok(())
     }
 
+    /// Empty Trash or Junk (Paul, 30 Oct 2026: "make empty trash and empty spam work"): every message in the folder erased
+    /// for good — on the server and here. Only those two folders; the UI asks first. Gmail can't (api_folder_empty says
+    /// why). → how many were erased.
+    pub async fn folder_empty(&self, id: String) -> Result<usize> {
+        let fid = parse_id(&id, "The folder")?;
+        let f = self.store().call(move |c| folder_by_id(c, fid)).await?;
+        if !matches!(f.role, Some(FolderRole::Trash) | Some(FolderRole::Junk)) {
+            return Err(ApiError::invalid("id", "Only Trash and Junk can be emptied."));
+        }
+        let acct = self.account(&f.account_id).await?;
+        let n = if crate::providers::backend(&acct) != crate::providers::Backend::Imap {
+            self.api_folder_empty(&acct, fid).await?
+        } else {
+            let path = f.path.clone();
+            self.with_interactive(&f.account_id, move |conn| {
+                let p = path.clone();
+                Box::pin(async move { conn.empty_folder(&p).await })
+            })
+            .await?
+        };
+        self.store()
+            .call(move |c| {
+                let ids: Vec<i64> = {
+                    let mut st = c.prepare("SELECT id FROM messages WHERE folder_id=?1")?;
+                    let v = st.query_map(params![fid], |r| r.get(0))?.collect::<rusqlite::Result<Vec<_>>>()?;
+                    v
+                };
+                for i in ids {
+                    crate::msgstore::delete_row(c, i)?;
+                }
+                Ok(())
+            })
+            .await?;
+        self.emit("mail://changed", serde_json::json!({ "folderIds": [id] }));
+        self.emit_counts().await;
+        Ok(n)
+    }
+
     pub async fn folder_mark_read(&self, id: String) -> Result<()> {
         let fid = parse_id(&id, "The folder")?;
         let f = self.store().call(move |c| folder_by_id(c, fid)).await?;
