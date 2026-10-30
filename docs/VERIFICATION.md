@@ -46,6 +46,9 @@ domain can't be \*.onmicrosoft.com". In the meantime, users in many work and sch
 all**: unverified multi-tenant apps registered after 8 Nov 2020 that ask for more than sign-in and profile are
 blocked when risk-based step-up consent is on. Mail.ReadWrite counts.
 
+**Status (30 Oct 2026):** the custom domain `intelligentwolf.com` is added. Waiting for Microsoft to verify
+IntelligentWolf Ltd as a company (partner program, step 3). When that comes through, do steps 4–6.
+
 ### Steps
 1. **Custom domain.** In the Entra admin center, open Domain names → Add custom domain → `intelligentwolf.com`.
    Add the TXT record it shows at the DNS host, then click Verify.
