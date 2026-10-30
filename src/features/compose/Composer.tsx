@@ -339,7 +339,8 @@ function ComposerWindow({ c }: { c: Composer }) {
 
       <EditorToolbar editor={editor} />
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* overflow-y-scroll: the quoted message is sized to its width like the reader's, so the same scrollbar flicker (Reader.tsx). */}
+      <div className="min-h-0 flex-1 overflow-y-scroll">
         {!c.quoteOnTop && quoteBlock}
         <div className="wm-editor selectable px-4 pt-3" onClick={() => editor?.commands.focus()}>
           <EditorContent editor={editor} />

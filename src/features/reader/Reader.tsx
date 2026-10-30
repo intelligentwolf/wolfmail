@@ -73,7 +73,11 @@ function Conversation({ row, dark, maximized, onToggleMax, iwPanel }: { row: Mes
   return (
     <article aria-label={row.subject || "(no subject)"} className="flex h-full min-w-0 flex-col bg-surface">
       <Toolbar row={row} latestId={latest.id} maximized={maximized} onToggleMax={onToggleMax} iwPanel={iwPanel} iwConnected={iwConnected} />
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* overflow-y-scroll, not -auto: the scrollbar's room is always kept (its track is transparent, so it shows nothing when there is
+          nothing to scroll). With -auto, a message about one screen tall flickered in a small window (Paul, 30 Oct 2026): the scrollbar
+          appeared → the pane got 10 px narrower → the email's pictures and tables, which scale with its width, got shorter → no scrollbar
+          → wider → taller → the scrollbar again, over and over. */}
+      <div className="min-h-0 flex-1 overflow-y-scroll">
         {/* Full width of the pane: with the side panels hidden the message should use all the room it has
             (Paul, 29 Oct 2026), not sit in a 920 px column. */}
         <div className="px-6 pb-16 pt-5">

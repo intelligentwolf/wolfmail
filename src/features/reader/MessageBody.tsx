@@ -8,6 +8,8 @@ import { escapeHtml } from "../../lib/utils";
 // still cannot run anything (the parent measures it, and re-measures while images arrive). Links: `<base target="_blank">` makes each click a new-window request, which the app
 // opens in the browser (or the composer, for mailto:) — src-tauri/src/lib.rs external_links(). WebKit runs no event
 // listeners inside a script-less frame, so a click handler here would never fire.
+// The frame never scrolls up and down itself (html{overflow-y:hidden}): it is sized to its content and the pane around it scrolls. A scrollbar
+// inside it for the moment before a re-measure made the email narrower, re-wrap and change height — another way into the flicker (30 Oct 2026).
 
 function frameDoc(inner: string, opts: { remote: boolean; plain: boolean; dark: boolean }) {
   const img = opts.remote ? "data: blob: https:" : "data: blob:";
@@ -21,7 +23,7 @@ function frameDoc(inner: string, opts: { remote: boolean; plain: boolean; dark: 
        blockquote[type=cite]{margin:0 0 0 .2em;padding-left:.8em;border-left:3px solid rgba(45,27,45,.18)}`;
   return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}">
 <meta name="color-scheme" content="${opts.plain && opts.dark ? "dark" : "light"}">
-<base target="_blank"><style>:root{color-scheme:${opts.plain && opts.dark ? "dark" : "light"}}html,body{margin:0;padding:0}body{padding:4px 2px 12px;overflow-x:auto}
+<base target="_blank"><style>:root{color-scheme:${opts.plain && opts.dark ? "dark" : "light"}}html,body{margin:0;padding:0}html{overflow-y:hidden}body{padding:4px 2px 12px;overflow-x:auto}
 pre{white-space:pre-wrap}table{max-width:100%}${plainStyles}</style></head><body>${inner}</body></html>`;
 }
 
