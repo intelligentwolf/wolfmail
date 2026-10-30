@@ -31,6 +31,9 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
+/// How long the loopback listener waits for the browser to come back from Google or Microsoft.
+const OAUTH_WAIT_S: u64 = 900;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum OAuthProvider {
@@ -336,8 +339,9 @@ pub async fn authorize_scoped(
             return Ok(get("code").unwrap_or_default());
         }
     };
-    let code = match tokio::time::timeout(Duration::from_secs(300), wait).await {
-        Err(_) => return Err(ApiError::new(ErrorKind::Cancelled, "Sign-in timed out after 5 minutes.")),
+    // 15 minutes: an unverified app's warning, choosing the account and reading every permission can take a new user longer than 5.
+    let code = match tokio::time::timeout(Duration::from_secs(OAUTH_WAIT_S), wait).await {
+        Err(_) => return Err(ApiError::new(ErrorKind::Cancelled, "Sign-in timed out after 15 minutes. Start it again from WolfMail.")),
         Ok(r) => r?,
     };
 

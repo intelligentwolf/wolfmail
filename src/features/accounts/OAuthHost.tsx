@@ -36,6 +36,9 @@ export function OAuthHost() {
   return (
     <Dialog
       open
+      // A click back into WolfMail while Google's page is open must not stop the sign-in: it did, silently, and Google's redirect
+      // then hit a closed port — "Unable to connect … 127.0.0.1" in the browser (Paul, Ubuntu, 30 Oct 2026). Only Cancel, X or Escape stop it.
+      keepOnOutside
       onOpenChange={(o) => { if (!o) cancel(); }}
       title={`Finish signing in with ${name}`}
       description={`We've opened ${name}'s sign-in page in your web browser for ${pending.email || "your account"}. Approve access there and WolfMail carries on by itself.`}
@@ -49,6 +52,8 @@ export function OAuthHost() {
         <div className="space-y-2 text-[13px]">
           <p className="flex items-center gap-2 font-medium"><Globe className="size-4 text-muted-foreground" /> Don't see it?</p>
           <p className="text-muted-foreground">It may have opened in a browser window on another workspace or screen. Open it again, or copy the link into any browser on this computer.</p>
+          {/* 30 Oct 2026, Ubuntu: a Firefox protection add-on blocked Google's return to http://127.0.0.1 — "Unable to connect". */}
+          <p className="text-muted-foreground">If the browser says it can't connect to 127.0.0.1 or localhost after you approve, a privacy or security add-on is blocking the way back to WolfMail: allow local addresses in it, or use another browser, then press Open again.</p>
           <div className="flex flex-wrap gap-2 pt-1">
             <Button size="sm" onClick={() => openUrl(pending.url).catch((e) => notify.error(e, "Couldn't open the browser"))}><ExternalLink /> Open again</Button>
             <Button size="sm" variant="outline" onClick={copy}>{copied ? <Check /> : <Copy />} {copied ? "Copied" : "Copy link"}</Button>

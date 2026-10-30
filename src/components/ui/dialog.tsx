@@ -13,17 +13,20 @@ const overlay = "fixed inset-0 z-50 bg-black/40 backdrop-blur-[2px] data-[state=
 const panel =
   "fixed left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2 bg-popover text-foreground rounded-card shadow-[var(--shadow-pop)] ring-1 ring-border focus:outline-none max-h-[calc(100vh-48px)] flex flex-col";
 
+/** `keepOnOutside`: a click (or focus) outside the panel does NOT close it — only its own buttons, the X and Escape do. For a dialog
+ *  whose closing stops something the user is in the middle of elsewhere (a browser sign-in, OAuthHost). */
 export function Dialog({
-  open, onOpenChange, title, description, children, footer, className, hideClose,
+  open, onOpenChange, title, description, children, footer, className, hideClose, keepOnOutside,
 }: {
   open: boolean; onOpenChange: (o: boolean) => void; title: React.ReactNode; description?: React.ReactNode;
-  children?: React.ReactNode; footer?: React.ReactNode; className?: string; hideClose?: boolean;
+  children?: React.ReactNode; footer?: React.ReactNode; className?: string; hideClose?: boolean; keepOnOutside?: boolean;
 }) {
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className={overlay} />
-        <D.Content aria-modal="true" className={cn(panel, "w-[min(560px,calc(100vw-32px))]", className)}>
+        <D.Content aria-modal="true" className={cn(panel, "w-[min(560px,calc(100vw-32px))]", className)}
+          onInteractOutside={keepOnOutside ? (e) => e.preventDefault() : undefined}>
           <div className="flex items-start gap-3 px-6 pt-5 pb-3">
             <div className="min-w-0 flex-1">
               <D.Title className="font-title text-lg">{title}</D.Title>
