@@ -96,6 +96,12 @@ Status after setup on 29 Oct 2026:
 - Still to do before submitting: "What features will you use?" = Email client, the logo upload, and the demo video
   link. Then Verification Center → Prepare for verification → Confirm.
 
+**Submitted (status read 30 Oct 2026):** Google's Trust and Safety team has the form. Review takes 4–6 weeks, and the
+first email to the contact address comes within 3–5 days. Homepage and branding: reviewed 29 Oct. Privacy policy,
+app functionality, data access, minimum scopes and the additional requirements: under review. The last approved
+consent screen stays in use meanwhile. Next: answer Trust and Safety's emails, then the CASA security assessment
+they ask for (restricted scope `gmail.modify`).
+
 WolfMail needs its own verification and its own yearly security assessment.
 
 ### Before submitting
