@@ -6507,7 +6507,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "wolfmail"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "parking_lot",
  "serde",
@@ -6529,7 +6529,7 @@ dependencies = [
 
 [[package]]
 name = "wolfmail-core"
-version = "0.1.7"
+version = "0.1.8"
 dependencies = [
  "ammonia",
  "argon2",
