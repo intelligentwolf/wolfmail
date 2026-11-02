@@ -2,7 +2,7 @@ import * as React from "react";
 import * as Popover from "@radix-ui/react-popover";
 import {
   ChevronLeft, ChevronRight, Plus, RefreshCw, AlertTriangle, WifiOff, Lock, MoreHorizontal, Download, UserPlus, Trash2, KeyRound,
-  CalendarPlus, Eye, EyeOff,
+  CalendarPlus, Check, Eye, EyeOff,
 } from "lucide-react";
 import { pimApi } from "../../lib/pimApi";
 import { notify } from "../../lib/notify";
@@ -199,12 +199,20 @@ function CalendarRow({ c }: { c: Calendar }) {
   const update = (patch: { color?: string; visible?: boolean }) => pimApi.calendarUpdate(c.id, patch).catch((e) => notify.error(e, "Couldn't change the calendar"));
   return (
     <li className="group flex h-8 items-center gap-2 rounded-lg px-2 hover:bg-accent">
-      <button type="button" role="checkbox" aria-checked={c.visible} aria-label={`Show ${c.name}`} onClick={() => update({ visible: !c.visible })}
-        className="flex size-4 shrink-0 items-center justify-center rounded ring-2 ring-inset" style={{ background: c.visible ? c.color : "transparent", boxShadow: `inset 0 0 0 2px ${c.color}` }}>
-        {c.visible ? <Eye className="size-2.5 text-white" aria-hidden /> : <EyeOff className="size-2.5" style={{ color: c.color }} aria-hidden />}
+      {/* The box AND the name toggle it, as in Google Calendar: a 16 px coloured square alone didn't read as a control, and
+          Paul couldn't find how to hide "Day of the Year" and "Hebrew Calendar" (2 Nov 2026). */}
+      <button type="button" role="checkbox" aria-checked={c.visible} aria-label={`Show ${c.name}`} title={c.visible ? `Hide ${c.name}` : `Show ${c.name}`}
+        onClick={() => update({ visible: !c.visible })} className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left">
+        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center rounded ring-2 ring-inset" style={{ background: c.visible ? c.color : "transparent", boxShadow: `inset 0 0 0 2px ${c.color}` }}>
+          {c.visible && <Check className="size-3 text-white" strokeWidth={3} />}
+        </span>
+        <span className={cn("min-w-0 flex-1 truncate text-[13px]", !c.visible && "text-muted-foreground line-through decoration-muted-foreground/50")}>{c.name}</span>
       </button>
-      <span className={cn("min-w-0 flex-1 truncate text-[13px]", !c.visible && "text-muted-foreground")}>{c.name}</span>
-      {c.readOnly && <Lock className="size-3 text-muted-foreground" aria-label="Read-only" />}
+      {c.readOnly && <Lock className="size-3 shrink-0 text-muted-foreground" aria-label="Read-only" />}
+      <IconButton label={c.visible ? `Hide ${c.name}` : `Show ${c.name}`} size="iconSm" side="right" onClick={() => update({ visible: !c.visible })}
+        className={cn("size-6", c.visible ? "hidden group-hover:inline-flex focus-visible:inline-flex" : "inline-flex text-muted-foreground")}>
+        {c.visible ? <EyeOff /> : <Eye />}
+      </IconButton>
       <Popover.Root>
         <Popover.Trigger asChild>
           <button type="button" aria-label={`Colour of ${c.name}`} className="hidden size-6 items-center justify-center rounded hover:bg-surface group-hover:flex focus-visible:flex">
