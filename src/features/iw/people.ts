@@ -20,12 +20,22 @@ function subscribe(l: () => void) { listeners.add(l); return () => { listeners.d
 /** Every address the user sends as (all accounts' identities), lowercased. */
 export function useMyAddresses(): Set<string> {
   const accounts = useStore((s) => s.accounts);
-  return useMemo(() => new Set(accounts.flatMap((a) => a.identities.map((i) => i.email.toLowerCase()))), [accounts]);
+  return useMemo(() => myAddresses(accounts), [accounts]);
 }
 
-/** The person this row is about: the sender, or — for mail the user sent — the first recipient. */
+/** Every address of every account (its own and its identities'), lower-case: the user's own addresses. */
+export function myAddresses(accounts: { email: string; identities: { email: string }[] }[]): Set<string> {
+  return new Set(accounts.flatMap((a) => [a.email, ...a.identities.map((i) => i.email)]).map((e) => e.trim().toLowerCase()).filter((e) => e.includes("@")));
+}
+
+/** The customer this row is about, never the user (Paul, 2 Nov 2026: "never log anything against the user … it should
+ *  be adding the customer NOT ME"). Mail the user sent → the first person on To, then Cc, who is not one of their own
+ *  addresses; mail they received → the sender. Only the user's own addresses on it → undefined: nothing is looked up,
+ *  logged or added. The engine picks the same person (iwcmds log_target) and refuses the rest. */
 export function otherParty(m: MessageSummary, mine: Set<string>): Address | undefined {
-  return mine.has(m.from.email.toLowerCase()) ? m.to[0] : m.from;
+  const notMine = (a: Address) => a.email.includes("@") && !mine.has(a.email.trim().toLowerCase());
+  if (mine.has(m.from.email.trim().toLowerCase())) return [...m.to, ...m.cc].find(notMine);
+  return notMine(m.from) ? m.from : undefined;
 }
 
 /** Ask about these addresses (batched: everything requested in the same tick goes in one call). */

@@ -165,7 +165,7 @@ function ColumnRow({ m, open }: { m: MessageSummary; open: boolean }) {
       >
         <div className="flex items-center gap-2">
           {unread && <span aria-label="Unread" className="size-2 shrink-0 rounded-full bg-[var(--iw-red)]" />}
-          <span className={cn("min-w-0 flex-1 truncate text-[13px]", unread ? "font-semibold" : "text-foreground/85")}>{displayName(m.from)}</span>
+          <span className={cn("min-w-0 flex-1 truncate text-[13px]", unread ? "font-semibold text-foreground" : "text-foreground/70")}>{displayName(m.from)}</span>
           {m.threadCount > 1 && <span className="text-[11px] tabular-nums text-muted-foreground">{m.threadCount}</span>}
           {A.isStarred(m) && <Star className="size-3.5 fill-[var(--iw-warn-text)] text-[var(--iw-warn-text)]" aria-label="Starred" />}
           {m.hasAttachments && <Paperclip className="size-3.5 text-muted-foreground" aria-label="Has attachments" />}

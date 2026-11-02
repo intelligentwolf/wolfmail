@@ -7,6 +7,7 @@ import {
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
 import { selectOpenRow, togglePanel, useStore } from "../../lib/store";
+import { otherParty, useMyAddresses } from "./people";
 import type { IwPerson, MessageSummary } from "../../lib/types";
 import { cn, displayName, listDate } from "../../lib/utils";
 import { Avatar, EmptyState, Skeleton, Spinner } from "../../components/ui/misc";
@@ -20,8 +21,7 @@ const kindIcon = { email: Mail, call: Phone, meeting: Calendar, note: MessageSqu
  *  address is sent to IW to look them up; message text goes only when the user presses Summarise/Log/Task. */
 export function IwPanel() {
   const row = useStore(selectOpenRow);
-  const accounts = useStore((s) => s.accounts);
-  const mine = React.useMemo(() => new Set(accounts.flatMap((a) => a.identities.map((i) => i.email.toLowerCase()))), [accounts]);
+  const mine = useMyAddresses();
   if (!row) {
     return (
       <Shell>
@@ -29,7 +29,15 @@ export function IwPanel() {
       </Shell>
     );
   }
-  const person = mine.has(row.from.email.toLowerCase()) ? row.to[0] ?? row.from : row.from;
+  const person = otherParty(row, mine);
+  if (!person) {
+    return (
+      <Shell>
+        <EmptyState icon={<UserRound className="size-6" />} title="Between your own addresses"
+          body="This email is from you to yourself, so there is nobody to look up or log it under." />
+      </Shell>
+    );
+  }
   return (
     <Shell>
       <PersonCard key={person.email + row.id} email={person.email} name={person.name} row={row} />

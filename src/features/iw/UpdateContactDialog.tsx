@@ -4,13 +4,13 @@ import { Sparkles, History } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
 import { getState, useStore } from "../../lib/store";
-import type { IwField, IwPerson, MessageSummary } from "../../lib/types";
+import type { Address, IwField, IwPerson, MessageSummary } from "../../lib/types";
 import { displayName } from "../../lib/utils";
 import { Dialog } from "../../components/ui/dialog";
 import { Button } from "../../components/ui/button";
 import { Field, Input, Switch, Textarea } from "../../components/ui/form";
 import { Skeleton, Spinner } from "../../components/ui/misc";
-import { invalidatePeople, otherParty } from "./people";
+import { invalidatePeople, myAddresses, otherParty } from "./people";
 
 /** Who and what: someone reading an email from a customer wants that email, and any new details in it (a new phone
  *  number, a job title from the signature), on the customer's IntelligentWolf record in one step, without retyping.
@@ -25,26 +25,25 @@ const LABELS: Record<IwField, string> = {
 const ORDER = Object.keys(LABELS) as IwField[];
 
 export function UpdateContactHost() {
-  const [row, setRow] = React.useState<MessageSummary | null>(null);
+  const [open, setOpen] = React.useState<{ row: MessageSummary; who: Address } | null>(null);
   React.useEffect(() => {
     const h = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
       const m = getState().list.items.find((x) => x.id === id);
-      if (m) setRow(m);
+      // Never for the user themselves: an email between their own addresses has nobody to add or update.
+      const who = m && otherParty(m, myAddresses(getState().accounts));
+      if (m && who) setOpen({ row: m, who });
     };
     window.addEventListener("wm:iw-update", h);
     return () => window.removeEventListener("wm:iw-update", h);
   }, []);
-  return row ? <UpdateContactDialog key={row.id} row={row} onClose={() => setRow(null)} /> : null;
+  return open ? <UpdateContactDialog key={open.row.id} row={open.row} who={open.who} onClose={() => setOpen(null)} /> : null;
 }
 
 type Change = { value: string; on: boolean };
 
-function UpdateContactDialog({ row, onClose }: { row: MessageSummary; onClose: () => void }) {
-  const accounts = useStore((s) => s.accounts);
+function UpdateContactDialog({ row, who, onClose }: { row: MessageSummary; who: Address; onClose: () => void }) {
   const assistant = useStore((s) => s.settings?.assistantName || "Alex");
-  const mine = React.useMemo(() => new Set(accounts.flatMap((a) => a.identities.map((i) => i.email.toLowerCase()))), [accounts]);
-  const who = otherParty(row, mine) ?? row.from;
   const [person, setPerson] = React.useState<IwPerson | null | undefined>(undefined);
   const [loadErr, setLoadErr] = React.useState<string>();
   const [name, setName] = React.useState(displayName(who));

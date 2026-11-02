@@ -212,14 +212,22 @@ function ComposerWindow({ c }: { c: Composer }) {
     run(0);
   };
 
+  /** Adds files by path, skipping any already attached, and says so — the same file twice is never what was meant. */
+  const attachPaths = (paths: string[]) => {
+    const have = new Set(draftRef.current.attachments.map((a) => a.path).filter(Boolean));
+    const fresh = [...new Set(paths)].filter((p) => !have.has(p));
+    const name = (p: string) => p.split(/[\\/]/).pop() || p;
+    const dupes = paths.filter((p) => have.has(p));
+    if (dupes.length) notify.info(dupes.length === 1 ? `${name(dupes[0])} is already attached` : `${dupes.length} of those files are already attached`);
+    if (!fresh.length) return;
+    setAttachMeta((m) => { const n = { ...m }; for (const p of fresh) n[p] = { name: name(p) }; return n; });
+    patch({ attachments: [...draftRef.current.attachments, ...fresh.map((path) => ({ path }))] });
+  };
+
   const addFiles = async () => {
     const picked = await openFileDialog({ multiple: true, title: "Attach files" });
     if (!picked) return;
-    const paths = (Array.isArray(picked) ? picked : [picked]).map(String);
-    const meta = { ...attachMeta };
-    for (const p of paths) meta[p] = { name: p.split(/[\\/]/).pop() || p };
-    setAttachMeta(meta);
-    patch({ attachments: [...draftRef.current.attachments, ...paths.map((path) => ({ path }))] });
+    attachPaths((Array.isArray(picked) ? picked : [picked]).map(String));
   };
 
   const onDropFiles = (e: React.DragEvent) => {
@@ -230,8 +238,7 @@ function ComposerWindow({ c }: { c: Composer }) {
     const h = (e: Event) => {
       const paths = (e as CustomEvent<string[]>).detail;
       if (!paths?.length) return;
-      setAttachMeta((m) => { const n = { ...m }; for (const p of paths) n[p] = { name: p.split(/[\\/]/).pop() || p }; return n; });
-      patch({ attachments: [...draftRef.current.attachments, ...paths.map((path) => ({ path }))] });
+      attachPaths(paths);
     };
     window.addEventListener("wm:files-dropped", h);
     return () => window.removeEventListener("wm:files-dropped", h);
@@ -352,22 +359,30 @@ function ComposerWindow({ c }: { c: Composer }) {
           </div>
         )}
         {c.quoteOnTop && quoteBlock}
-        {draft.attachments.length > 0 && (
-          <ul role="list" aria-label="Attachments" className="flex flex-wrap gap-2 px-4 pb-3">
+      </div>
+
+      {/* Attached files sit in their own strip above the send bar, not at the end of the scrolling body: there they were
+          below the signature and the quoted email, out of sight, and a file got attached twice (Paul, 2 Nov 2026). */}
+      {draft.attachments.length > 0 && (
+        <div className="max-h-28 shrink-0 overflow-y-auto border-t border-border bg-surface-inset px-4 py-2">
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground" aria-live="polite">
+            {draft.attachments.length === 1 ? "1 file attached" : `${draft.attachments.length} files attached`}
+          </p>
+          <ul role="list" aria-label="Attachments" className="flex flex-wrap gap-2">
             {draft.attachments.map((a, i) => {
               const name = a.path ? attachMeta[a.path]?.name ?? a.path.split(/[\\/]/).pop() : `Attachment ${i + 1} from the original`;
               return (
                 <li key={(a.path ?? a.fromMessage?.attachmentId ?? "") + i} className="flex items-center gap-2 rounded-lg bg-surface-raised py-1 pl-2.5 pr-1 text-[12.5px] ring-1 ring-border">
                   <FileText className="size-4 text-[var(--iw-red-text)]" />
-                  <span className="max-w-[220px] truncate">{name}</span>
+                  <span className="max-w-[220px] truncate" title={a.path ?? name}>{name}</span>
                   <button type="button" aria-label={`Remove ${name}`} className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
                     onClick={() => patch({ attachments: draftRef.current.attachments.filter((_, j) => j !== i) })}><X className="size-3.5" /></button>
                 </li>
               );
             })}
           </ul>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-1.5 border-t border-border px-3 py-2.5">
         <div className="flex">

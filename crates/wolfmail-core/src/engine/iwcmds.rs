@@ -134,32 +134,24 @@ impl Engine {
         let rid: i64 = message_id.parse().map_err(|_| ApiError::not_found("The message"))?;
         let s = self.store().call(move |c| msgstore::get_summary(c, rid)).await?;
         let text = if include_text { Some(self.message_payload(rid).await?.0["text"].as_str().unwrap_or("").to_string()) } else { None };
-        let acct = self.account(&s.account_id).await?;
-        let outgoing = acct.identities.iter().any(|i| i.email.eq_ignore_ascii_case(&s.from.email));
-        let to: Vec<String> = s.to.iter().map(|a| a.email.clone()).collect();
-        let mut body = json!({
-            "direction": if outgoing { "out" } else { "in" },
-            "messageId": s.message_id.clone().unwrap_or_default(),
-            "subject": s.subject,
-            "from": s.from.email,
-            "to": to.join(", "),
-            "date": s.date,
-            "snippet": s.snippet,
-        });
-        if let Some(l) = lead_id {
-            body["leadId"] = Value::String(l);
-        }
-        if let Some(c) = contact_id {
-            body["contactId"] = Value::String(c);
-        }
-        if let Some(t) = text {
-            body["text"] = Value::String(t);
-        }
-        if let Some(n) = s.from.name.clone().filter(|n| !n.trim().is_empty()) {
-            body["fromName"] = Value::String(n);
-        }
+        let mine = self.my_addresses().await?;
+        let (outgoing, customer) = log_target(&s, &mine)?;
+        let body = log_email_body(&s, outgoing, &customer, lead_id, contact_id, text);
         let r = self.iw().log_email(body).await?;
         Ok(json!({ "leadId": r["leadId"].clone(), "contactId": r["contactId"].clone() }))
+    }
+
+    /// Every address of every account here, lower-case: the user's own, whichever account the email is in (mail sent
+    /// from one account's address can sit in another's folders).
+    async fn my_addresses(&self) -> Result<std::collections::HashSet<String>> {
+        Ok(self
+            .accounts_list()
+            .await?
+            .into_iter()
+            .flat_map(|a| std::iter::once(a.email).chain(a.identities.into_iter().map(|i| i.email)))
+            .map(|e| e.trim().to_ascii_lowercase())
+            .filter(|e| e.contains('@'))
+            .collect())
     }
 
     pub async fn iw_create_task(&self, message_id: String, title: String, due: Option<Value>) -> Result<Value> {
@@ -233,6 +225,9 @@ impl Engine {
         if !email.contains('@') {
             return Err(ApiError::invalid("email", "Not an email address."));
         }
+        if self.my_addresses().await?.contains(&email.trim().to_ascii_lowercase()) {
+            return Err(ApiError::invalid("email", "That is one of your own addresses — WolfMail never adds you to IntelligentWolf as a lead."));
+        }
         let body = json!({ "email": email.trim().to_ascii_lowercase(), "fields": if fields.is_object() { fields } else { json!({}) } });
         self.iw().contact_create(body).await
     }
@@ -261,5 +256,152 @@ impl Engine {
 
     pub async fn iw_chat_history(&self) -> Result<Value> {
         self.iw().chat_history().await
+    }
+}
+
+/// Who an email is logged under (PURE) — always the customer, never the user (Paul's rule, 2 Nov 2026: "never log
+/// anything against the user … if i click add to crm for an email and i'm in it it should be adding the customer NOT ME").
+/// Mail the user sent → the first person on To, then Cc, who is not one of the user's own addresses (so it is the
+/// customer even when the user put themselves first or the customer is only copied in). Mail the user received → the
+/// sender. Returns (outgoing, that person); refuses when the email is only between the user's own addresses.
+pub(crate) fn log_target(
+    s: &crate::model::MessageSummary,
+    mine: &std::collections::HashSet<String>,
+) -> Result<(bool, crate::model::Address)> {
+    let not_mine = |a: &&crate::model::Address| {
+        let e = a.email.trim().to_ascii_lowercase();
+        e.contains('@') && !mine.contains(&e)
+    };
+    let outgoing = mine.contains(&s.from.email.trim().to_ascii_lowercase());
+    let other = if outgoing { s.to.iter().chain(s.cc.iter()).find(not_mine) } else { Some(&s.from).filter(not_mine) };
+    other.cloned().map(|a| (outgoing, a)).ok_or_else(|| {
+        ApiError::invalid(
+            "messageId",
+            "This email is only between your own addresses, so there is no customer to log it under — WolfMail never logs an email under you.",
+        )
+    })
+}
+
+/// The body of IntelligentWolf's POST /wolfmail/log-email (PURE). `other` is log_target's customer.
+///
+/// With no leadId/contactId the server files mail out under the FIRST address of `to` (strtok($to, ',')) and mail in
+/// under `from`, and when nobody has that address yet it makes a lead named `fromName`.
+/// Source: intelligentwolf php-api/lib/wolfmail_routes.php `$what === 'log-email'`. So for mail out the customer goes
+/// first in `to` (the other recipients follow, none dropped), and `fromName` is always the customer's name — sending the
+/// sender's name made a lead for the client's address named after the user (Paul, 2 Nov 2026).
+pub(crate) fn log_email_body(
+    s: &crate::model::MessageSummary,
+    outgoing: bool,
+    other: &crate::model::Address,
+    lead_id: Option<String>,
+    contact_id: Option<String>,
+    text: Option<String>,
+) -> Value {
+    let mut to: Vec<String> = s.to.iter().map(|a| a.email.clone()).collect();
+    if outgoing {
+        to.retain(|e| !e.eq_ignore_ascii_case(&other.email));
+        to.insert(0, other.email.clone());
+    }
+    let mut body = json!({
+        "direction": if outgoing { "out" } else { "in" },
+        "messageId": s.message_id.clone().unwrap_or_default(),
+        "subject": s.subject,
+        "from": s.from.email,
+        "to": to.join(", "),
+        "date": s.date,
+        "snippet": s.snippet,
+    });
+    if let Some(l) = lead_id {
+        body["leadId"] = Value::String(l);
+    }
+    if let Some(c) = contact_id {
+        body["contactId"] = Value::String(c);
+    }
+    if let Some(t) = text {
+        body["text"] = Value::String(t);
+    }
+    if let Some(n) = other.name.clone().filter(|n| !n.trim().is_empty()) {
+        body["fromName"] = Value::String(n);
+    }
+    body
+}
+
+#[cfg(test)]
+mod log_email_tests {
+    use super::{log_email_body, log_target};
+    use crate::model::{Address, Flags, MessageSummary};
+    use std::collections::HashSet;
+
+    fn mine() -> HashSet<String> {
+        ["paul@me.test", "sales@me.test"].iter().map(|s| s.to_string()).collect()
+    }
+    fn a(name: Option<&str>, email: &str) -> Address {
+        Address { name: name.map(Into::into), email: email.into() }
+    }
+    fn msg(from: Address, to: Vec<Address>, cc: Vec<Address>) -> MessageSummary {
+        MessageSummary {
+            id: "1".into(),
+            account_id: "a".into(),
+            folder_id: "1".into(),
+            thread_id: "t".into(),
+            message_id: Some("m@x".into()),
+            subject: "Quote".into(),
+            from,
+            to,
+            cc,
+            date: 0,
+            snippet: String::new(),
+            flags: Flags::default(),
+            tags: vec![],
+            has_attachments: false,
+            size: 0,
+            thread_count: 1,
+            thread_unread: 0,
+            thread_flagged: false,
+            snoozed_until: None,
+            person: true,
+        }
+    }
+    fn body_for(m: &MessageSummary) -> serde_json::Value {
+        let (out, who) = log_target(m, &mine()).unwrap();
+        log_email_body(m, out, &who, None, None, None)
+    }
+
+    #[test]
+    fn mail_the_user_sent_goes_under_the_customer() {
+        // Paul → Jack: Jack, named Jack, never Paul (the IronOak email, 2 Nov 2026).
+        let m = msg(a(Some("Paul Clevett"), "Paul@Me.test"), vec![a(Some("Jack Frangou"), "jfrangou@ironoak.org.uk")], vec![]);
+        let b = body_for(&m);
+        assert_eq!((b["direction"].as_str(), b["to"].as_str(), b["fromName"].as_str()), (Some("out"), Some("jfrangou@ironoak.org.uk"), Some("Jack Frangou")));
+    }
+
+    #[test]
+    fn the_customer_is_found_past_the_users_own_addresses() {
+        // The user put their own address first: the customer still goes first in `to` (the server reads the first).
+        let m = msg(a(Some("Paul"), "paul@me.test"), vec![a(None, "sales@me.test"), a(Some("Jack"), "jack@x.test")], vec![]);
+        let b = body_for(&m);
+        assert_eq!((b["to"].as_str(), b["fromName"].as_str()), (Some("jack@x.test, sales@me.test"), Some("Jack")));
+        // The customer only on Cc.
+        let m = msg(a(Some("Paul"), "paul@me.test"), vec![a(None, "sales@me.test")], vec![a(Some("Jack"), "jack@x.test")]);
+        assert_eq!(body_for(&m)["to"].as_str(), Some("jack@x.test, sales@me.test"));
+    }
+
+    #[test]
+    fn mail_in_goes_under_the_sender_and_keeps_to_as_sent() {
+        let m = msg(a(Some("Jack"), "jack@x.test"), vec![a(Some("Paul"), "paul@me.test"), a(None, "o@x.test")], vec![]);
+        let (out, who) = log_target(&m, &mine()).unwrap();
+        assert!(!out);
+        let b = log_email_body(&m, out, &who, Some("7".into()), None, None);
+        assert_eq!((b["to"].as_str(), b["fromName"].as_str(), b["leadId"].as_str()), (Some("paul@me.test, o@x.test"), Some("Jack"), Some("7")));
+    }
+
+    #[test]
+    fn no_name_sends_none_and_only_own_addresses_is_refused() {
+        let m = msg(a(Some("Paul"), "paul@me.test"), vec![a(None, "jack@x.test")], vec![]);
+        assert!(body_for(&m).get("fromName").is_none());
+        assert!(log_target(&msg(a(Some("Paul"), "paul@me.test"), vec![a(None, "sales@me.test")], vec![]), &mine()).is_err());
+        assert!(log_target(&msg(a(Some("Paul"), "paul@me.test"), vec![], vec![]), &mine()).is_err());
+        // From one of the user's addresses to another of theirs: nobody to log it under.
+        assert!(log_target(&msg(a(None, "sales@me.test"), vec![a(None, "paul@me.test")], vec![]), &mine()).is_err());
     }
 }

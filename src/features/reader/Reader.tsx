@@ -70,6 +70,33 @@ function Conversation({ row, dark, maximized, onToggleMax, iwPanel }: { row: Mes
 
   const latest = members ? members[members.length - 1] : row;
 
+  // Star one message of the conversation from its card. The list row (the newest message) shows the thread's star, so it
+  // gets the new answer too: its own flag if it is that message, and threadFlagged = any message still starred.
+  const setMemberFlag = async (id: string, flagged: boolean) => {
+    const before = members;
+    const next = (members ?? [row]).map((m) => (m.id === id ? { ...m, flags: { ...m.flags, flagged } } : m));
+    setMembers(next);
+    patchRows([row.id], (r) => ({ ...r, flags: { ...r.flags, flagged: r.id === id ? flagged : r.flags.flagged }, threadFlagged: next.some((m) => m.flags.flagged) }));
+    try {
+      await (flagged ? api.setFlags([id], ["flagged"], []) : api.setFlags([id], [], ["flagged"]));
+    } catch (e) {
+      setMembers(before);
+      patchRows([row.id], (r) => ({ ...r, flags: { ...r.flags, flagged: r.id === id ? !flagged : r.flags.flagged }, threadFlagged: (before ?? [row]).some((m) => m.flags.flagged) }));
+      notify.error(e, flagged ? "Couldn't star" : "Couldn't unstar");
+    }
+  };
+
+  // The toolbar's Star / Unstar acts on the whole conversation (actions.toggleFlag): keep the cards in step with it.
+  const rowStarred = A.isStarred(row);
+  React.useEffect(() => {
+    setMembers((ms) => {
+      if (!ms) return ms;
+      if (!rowStarred && ms.some((m) => m.flags.flagged)) return ms.map((m) => ({ ...m, flags: { ...m.flags, flagged: false } }));
+      if (rowStarred && !ms.some((m) => m.flags.flagged)) return ms.map((m) => (m.id === row.id ? { ...m, flags: { ...m.flags, flagged: true } } : m));
+      return ms;
+    });
+  }, [rowStarred, row.id]);
+
   return (
     <article aria-label={row.subject || "(no subject)"} className="flex h-full min-w-0 flex-col bg-surface">
       <Toolbar row={row} latestId={latest.id} maximized={maximized} onToggleMax={onToggleMax} iwPanel={iwPanel} iwConnected={iwConnected} />
@@ -88,9 +115,12 @@ function Conversation({ row, dark, maximized, onToggleMax, iwPanel }: { row: Mes
           ) : !members ? (
             slow ? <MessageSkeleton /> : null
           ) : (
+            // Newest at the top, older going down (Paul, 2 Nov 2026: "rather than having to scroll to the bottom of the emails to
+            // see them"). threadGet answers oldest first.
             <div className="mt-5 space-y-3">
-              {members.map((m, i) => (
-                <MessageCard key={m.id} summary={m} defaultOpen={i === members.length - 1 || !m.flags.seen} dark={dark} topRowId={row.id} />
+              {[...members].reverse().map((m, i) => (
+                <MessageCard key={m.id} summary={m} defaultOpen={i === 0 || !m.flags.seen} dark={dark} topRowId={row.id}
+                  onFlag={(f) => void setMemberFlag(m.id, f)} />
               ))}
             </div>
           )}
@@ -199,7 +229,25 @@ function MessageSkeleton() {
   );
 }
 
-function MessageCard({ summary, defaultOpen, dark, topRowId }: { summary: MessageSummary; defaultOpen: boolean; dark: boolean; topRowId: string }) {
+/** Star toggle and paperclip for one message of a conversation — on the folded line and the open card alike, so which
+ *  messages are starred or carry files shows without opening each one. */
+function MessageMarks({ summary, onFlag }: { summary: MessageSummary; onFlag: (flagged: boolean) => void }) {
+  const starred = summary.flags.flagged;
+  return (
+    <>
+      {summary.hasAttachments && <Paperclip className="size-3.5 shrink-0 text-muted-foreground" aria-label="Has attachments" />}
+      <button type="button" aria-label={starred ? "Unstar this message" : "Star this message"} aria-pressed={starred}
+        title={starred ? "Unstar" : "Star"}
+        onClick={(e) => { e.stopPropagation(); onFlag(!starred); }}
+        className={cn("flex size-6 shrink-0 items-center justify-center rounded hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--iw-red)]",
+          starred ? "text-[var(--iw-warn-text)]" : "text-muted-foreground/60 hover:text-foreground")}>
+        <Star className={cn("size-4", starred && "fill-current")} />
+      </button>
+    </>
+  );
+}
+
+function MessageCard({ summary, defaultOpen, dark, topRowId, onFlag }: { summary: MessageSummary; defaultOpen: boolean; dark: boolean; topRowId: string; onFlag: (flagged: boolean) => void }) {
   const [open, setOpen] = React.useState(defaultOpen);
   const [full, setFull] = React.useState<MessageFull | null>(null);
   const [error, setError] = React.useState<string>();
@@ -240,12 +288,15 @@ function MessageCard({ summary, defaultOpen, dark, topRowId }: { summary: Messag
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="flex w-full items-center gap-3 rounded-card bg-surface px-4 py-3 text-left ring-1 ring-border hover:bg-accent/60">
-        <Avatar address={summary.from} size={30} />
-        <span className={cn("w-44 shrink-0 truncate text-[13px]", !summary.flags.seen && "font-semibold")}>{displayName(summary.from)}</span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{summary.snippet}</span>
+      <div className="flex w-full items-center gap-2 rounded-card bg-surface pr-4 ring-1 ring-border hover:bg-accent/60">
+        <button type="button" onClick={() => setOpen(true)} aria-expanded={false} className="flex min-w-0 flex-1 items-center gap-3 py-3 pl-4 text-left">
+          <Avatar address={summary.from} size={30} />
+          <span className={cn("w-44 shrink-0 truncate text-[13px]", !summary.flags.seen && "font-semibold")}>{displayName(summary.from)}</span>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-muted-foreground">{summary.snippet}</span>
+        </button>
+        <MessageMarks summary={summary} onFlag={onFlag} />
         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{listDate(summary.date)}</span>
-      </button>
+      </div>
     );
   }
 
@@ -261,6 +312,7 @@ function MessageCard({ summary, defaultOpen, dark, topRowId }: { summary: Messag
             </button>
             <span className="selectable min-w-0 truncate text-xs text-muted-foreground">&lt;{summary.from.email}&gt;</span>
             <div className="flex-1" />
+            <span className="flex items-center gap-1 self-center"><MessageMarks summary={summary} onFlag={onFlag} /></span>
             <time className="shrink-0 text-xs tabular-nums text-muted-foreground" title={fullDate(summary.date)}>{fullDate(summary.date)}</time>
           </div>
           <button type="button" onClick={() => setDetails((d) => !d)} aria-expanded={details} className="mt-0.5 flex max-w-full items-center gap-1 text-left text-xs text-muted-foreground hover:text-foreground">

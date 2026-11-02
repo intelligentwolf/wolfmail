@@ -287,7 +287,12 @@ const Row = React.memo(function Row({
   const starred = A.isStarred(m);
   // A person's mail: the engine's person flag (not bulk or machine mail, or from someone this account writes to).
   const person = highlight && m.person;
-  const bulk = highlight && !m.person;
+  // Bulk mail steps back only once it is read — an unread newsletter is still unread (Paul, 2 Nov 2026: "make it clearer
+  // which emails are unread"). Unread: bold, full ink, red dot; read: regular weight, softer ink (6.5:1 light, 6.5:1 dark).
+  const bulk = highlight && !m.person && !unread;
+  const tone = unread ? "font-semibold text-foreground" : bulk ? "font-normal text-muted-foreground" : "font-normal text-foreground/70";
+  const dot = unread && <span aria-hidden className="size-2.5 shrink-0 rounded-full bg-[var(--iw-red)]" />;
+  const unreadSr = unread && <span className="sr-only">Unread,</span>;
   const sentView = useStore((s) => (s.view.kind === "unified" ? s.view.unified === "sent" : folderById((s.view as { folderId: string }).folderId)?.role === "sent"));
   const who = sentView || isDraft ? (m.to.length ? m.to.map((a) => displayName(a)).join(", ") : "(no recipients)") : displayName(m.from);
   const mtags = m.tags.map((k) => tags.find((t) => t.key === k)).filter(Boolean) as { key: string; name: string; color: string }[];
@@ -351,7 +356,8 @@ const Row = React.memo(function Row({
     layout === "table" ? (
       <div className="grid h-full grid-cols-[28px_minmax(140px,1.1fr)_minmax(200px,3fr)_86px] items-center gap-0 px-3 text-[13px]">
         {star}
-        <span className={cn("flex min-w-0 items-center gap-2 truncate pr-3", unread && "font-semibold", bulk && "text-muted-foreground")}>
+        <span className={cn("flex min-w-0 items-center gap-2 truncate pr-3", tone)}>
+          {dot}{unreadSr}
           {showAccount && account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: account.color }} />}
           <span className="truncate">{who}</span>
           {iwMatch && <IwBadge match={iwMatch} />}
@@ -359,7 +365,7 @@ const Row = React.memo(function Row({
         </span>
         <span className="flex min-w-0 items-center gap-2 pr-3">
           {mtags.map((t) => <span key={t.key} className="size-2 shrink-0 rounded-full" style={{ background: t.color }} title={t.name} />)}
-          <span className={cn("truncate", unread && "font-semibold", bulk && "text-muted-foreground")}>{m.subject || "(no subject)"}</span>
+          <span className={cn("truncate", tone)}>{m.subject || "(no subject)"}</span>
           <span className="truncate text-muted-foreground">— {m.snippet}</span>
         </span>
         <span className={cn("flex items-center justify-end gap-1.5 text-xs tabular-nums", unread ? "font-semibold text-foreground" : "text-muted-foreground")}>
@@ -378,8 +384,8 @@ const Row = React.memo(function Row({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            {unread && <span aria-hidden className="size-2 shrink-0 rounded-full bg-[var(--iw-red)]" />}
-            <span className={cn("min-w-0 truncate text-[13.5px]", unread ? "font-semibold" : "font-medium text-foreground/85", bulk && "text-muted-foreground")}>{who}</span>
+            {dot}{unreadSr}
+            <span className={cn("min-w-0 truncate text-[13.5px]", tone)}>{who}</span>
             {person && <span className="sr-only">(from a person)</span>}
             {iwMatch && <IwBadge match={iwMatch} />}
             {m.threadCount > 1 && (
@@ -401,7 +407,7 @@ const Row = React.memo(function Row({
             )}
           </div>
           <div className="mt-0.5 flex items-center gap-2">
-            <span className={cn("min-w-0 truncate text-[13px]", unread ? "font-semibold text-foreground" : "text-foreground/80", bulk && "text-muted-foreground")}>{m.subject || "(no subject)"}</span>
+            <span className={cn("min-w-0 truncate text-[13px]", tone)}>{m.subject || "(no subject)"}</span>
             <div className="flex-1" />
             {star}
           </div>
