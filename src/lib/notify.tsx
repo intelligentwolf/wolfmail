@@ -35,9 +35,9 @@ export const notify = {
     announce("status", text);
     toast.success(text, { action: opts?.action, duration: opts?.duration ?? 4000 });
   },
-  info(text: string, opts?: { action?: { label: string; onClick: () => void }; duration?: number; id?: string }) {
+  info(text: string, opts?: { action?: { label: string; onClick: () => void }; cancel?: { label: string; onClick: () => void }; duration?: number; id?: string }) {
     announce("status", text);
-    return toast(text, { action: opts?.action, duration: opts?.duration ?? 5000, id: opts?.id });
+    return toast(text, { action: opts?.action, cancel: opts?.cancel, duration: opts?.duration ?? 5000, id: opts?.id });
   },
   error(e: unknown, context?: string) {
     const err: ApiError = toApiError(e);

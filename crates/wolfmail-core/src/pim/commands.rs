@@ -168,7 +168,10 @@ pub async fn fire_due_reminders(e: &Engine) -> Result<()> {
             e.pim().store.call(move |c| store::mark_reminder_fired(c, &id, occ, m)).await?;
             e.emit(
                 "calendar://reminder",
-                serde_json::json!({ "eventId": o.event_id, "title": o.title, "start": o.start, "allDay": o.all_day, "location": o.location, "minutes": m }),
+                // occurrenceStart + recurring: what the calendar's own clicks pass to open this occurrence in the editor
+                // (TimeGrid/MonthGrid/Agenda), so a click on the reminder opens the same thing.
+                serde_json::json!({ "eventId": o.event_id, "title": o.title, "start": o.start, "allDay": o.all_day, "location": o.location, "minutes": m,
+                                    "occurrenceStart": o.occurrence_start, "recurring": o.recurring }),
             );
         }
     }

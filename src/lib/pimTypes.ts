@@ -53,4 +53,4 @@ export type PimImportItem = {
 };
 export type PimImportCandidate = { profilePath: string; items: PimImportItem[] };
 
-export type ReminderEvent = { eventId: string; title: string; start: number; allDay: boolean; location: string; minutes: number };
+export type ReminderEvent = { eventId: string; title: string; start: number; allDay: boolean; location: string; minutes: number; occurrenceStart: number; recurring: boolean };

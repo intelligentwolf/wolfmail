@@ -1,9 +1,12 @@
 import { useSyncExternalStore } from "react";
-import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { isPermissionGranted, onAction, registerActionTypes, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { pimApi, pimEvents } from "./pimApi";
 import { notify } from "./notify";
 import { modalOpen } from "./dom";
-import type { AddressBook, CalEvent, Calendar, PimAccount } from "./pimTypes";
+import { findLinks } from "./links";
+import type { AddressBook, CalEvent, Calendar, PimAccount, ReminderEvent } from "./pimTypes";
 
 // Calendar & contacts UI state, kept apart from the mail store (lib/store.ts) so the two grow independently.
 
@@ -98,17 +101,54 @@ export function bootPim() {
     setPim((s) => ({ accounts: s.accounts.map((a) => (a.id === e.accountId ? { ...a, status: e.status, statusMessage: e.message } : a)) }));
   });
   void pimEvents.notice((e) => notify.error({ kind: "server", message: e.message }, "Calendar change not saved"));
+  void listenReminderClicks();
   void pimEvents.reminder(async (r) => {
     const when = r.allDay ? "today" : new Date(r.start).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
     const body = `${when}${r.location ? ` · ${r.location}` : ""}`;
-    notify.info(`${r.title} — ${body}`, { duration: 15000 });
+    // The meeting link: the location's first, else the description's (read from the event; the reminder carries only the location).
+    let link = findLinks(r.location)[0];
+    if (!link) {
+      try { link = findLinks((await pimApi.eventGet(r.eventId)).description)[0]; } catch { /* the event opens without a Join button */ }
+    }
+    notify.info(`${r.title} — ${body}`, {
+      duration: 15000,
+      action: link ? { label: "Join", onClick: () => openLink(link) } : { label: "Open", onClick: () => openReminderEvent(r) },
+      cancel: link ? { label: "Open", onClick: () => openReminderEvent(r) } : undefined,
+    });
     try {
       let ok = await isPermissionGranted();
       if (!ok) ok = (await requestPermission()) === "granted";
-      if (ok) sendNotification({ title: r.title, body });
+      // A click on the notification opens the event; its Join button (when there is a link) opens the meeting (listenReminderClicks).
+      if (ok) sendNotification({ title: r.title, body, actionTypeId: link ? REMINDER_JOIN_TYPE : undefined, extra: { kind: "reminder", reminder: r, link: link ?? "" } });
     } catch { /* no notification service on this desktop; the in-app toast above still shows */ }
   });
   window.addEventListener("keydown", onKey);
+}
+
+const REMINDER_JOIN_TYPE = "wolfmail-reminder-join";
+
+function openLink(url: string) {
+  openUrl(url).catch((e) => notify.error(e, "Couldn't open the link"));
+}
+
+/** The reminder's event in the editor, on the calendar at its day — what clicking it in the calendar does. */
+export function openReminderEvent(r: ReminderEvent) {
+  setMode("calendar");
+  setPim({ anchor: r.start, editor: { kind: "edit", eventId: r.eventId, occurrenceStart: r.occurrenceStart ?? r.start, recurring: r.recurring } });
+}
+
+/** Desktop notifications: a click brings WolfMail forward; on a reminder it opens the event, its Join button the meeting. */
+async function listenReminderClicks() {
+  try {
+    await registerActionTypes([{ id: REMINDER_JOIN_TYPE, actions: [{ id: "join", title: "Join" }] }]);
+    await onAction((a) => {
+      const extra = a.notification?.extra as { kind?: string; reminder?: ReminderEvent; link?: string } | undefined;
+      if (extra?.kind === "reminder" && a.actionId === "join" && extra.link) { openLink(extra.link); return; }
+      const w = getCurrentWindow();
+      void w.show().then(() => w.setFocus()).catch(() => { /* the window is there; only bringing it forward failed */ });
+      if (extra?.kind === "reminder" && extra.reminder) openReminderEvent(extra.reminder);
+    });
+  } catch { /* no notification actions on this desktop; the in-app toast's buttons still work */ }
 }
 
 function typing(t: EventTarget | null) {

@@ -1,5 +1,7 @@
 import * as React from "react";
-import { Lock, Trash2, MapPin, AlignLeft, Users, Bell, Repeat, Globe, CheckCircle2, XCircle, HelpCircle, Clock3 } from "lucide-react";
+import { Lock, Trash2, MapPin, AlignLeft, Users, Bell, Repeat, Globe, CheckCircle2, XCircle, HelpCircle, Clock3, ExternalLink } from "lucide-react";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { findLinks, linkLabel } from "../../lib/links";
 import { pimApi } from "../../lib/pimApi";
 import { notify } from "../../lib/notify";
 import { setMode, setPim, usePim } from "../../lib/pim";
@@ -335,6 +337,7 @@ export function EventEditor() {
             <div className="flex items-center gap-2"><MapPin className="size-4 shrink-0 text-muted-foreground" />
               <Input value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Add a location or meeting link" aria-label="Location" />
             </div>
+            <EventLinks urls={findLinks(location)} join />
 
             <div className="overflow-visible rounded-lg ring-1 ring-border">
               <div className="flex items-center gap-2 px-3 pt-2 text-[13px] font-medium"><Users className="size-4 text-muted-foreground" /> Guests</div>
@@ -369,6 +372,7 @@ export function EventEditor() {
             <div className="flex gap-2"><AlignLeft className="mt-2 size-4 shrink-0 text-muted-foreground" />
               <Textarea rows={4} value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Add a description" aria-label="Description" />
             </div>
+            <EventLinks urls={findLinks(description).filter((u) => !findLinks(location).includes(u))} />
           </fieldset>
         </form>
       )}
@@ -380,4 +384,27 @@ export function EventEditor() {
 export function newEventWith(email: string, name?: string) {
   setMode("calendar");
   setPim({ editor: { kind: "new", draft: { attendees: [{ email, name, partstat: "NEEDS-ACTION", optional: false }] } } });
+}
+
+/**
+ * The links in a location or description, each opening in the browser. Anchors, not buttons, so they still open on a
+ * read-only event (its fieldset is disabled, which disables buttons inside it but not links). `join`: the first link is
+ * the meeting, shown as "Join".
+ */
+function EventLinks({ urls, join }: { urls: string[]; join?: boolean }) {
+  if (urls.length === 0) return null;
+  return (
+    <ul className="-mt-2 flex flex-wrap gap-x-3 gap-y-1 pl-6 text-[13px]" aria-label={join ? "Meeting link" : "Links in the description"}>
+      {urls.map((u, i) => (
+        <li key={u} className="min-w-0">
+          <a href={u} title={u}
+            onClick={(e) => { e.preventDefault(); openUrl(u).catch((err) => notify.error(err, "Couldn't open the link")); }}
+            className="inline-flex max-w-full items-center gap-1 font-medium text-foreground underline underline-offset-2 hover:no-underline">
+            <ExternalLink className="size-3.5 shrink-0" aria-hidden="true" />
+            <span className="truncate">{join && i === 0 ? `Join ${linkLabel(u)}` : linkLabel(u)}</span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
 }
