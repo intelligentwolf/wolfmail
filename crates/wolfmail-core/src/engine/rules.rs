@@ -581,6 +581,7 @@ mod tests {
             size: 0,
             thread_count: 1,
             thread_unread: 0,
+            thread_flagged: false,
             snoozed_until: None,
             person: true,
         }

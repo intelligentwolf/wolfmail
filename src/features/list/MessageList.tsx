@@ -2,7 +2,7 @@ import * as React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive, Trash2, Star, Paperclip, MailOpen, Mail, Search, X, Inbox, SearchX, AlertTriangle, CornerUpLeft, Forward,
-  Tag as TagIcon, FolderInput, ShieldAlert, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus, Sparkles, Undo2,
+  Tag as TagIcon, FolderInput, ShieldAlert, ShieldCheck, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus, Sparkles, Undo2,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "../../lib/notify";
@@ -71,6 +71,8 @@ export function MessageList() {
   const quietRole = (r?: string | null) => r === "sent" || r === "drafts" || r === "junk" || r === "trash";
   const highlight = view.kind === "unified" ? !quietRole(view.unified) : view.kind === "overview" || !quietRole(folder?.role);
   const filtered = !!search.trim() || Object.values(filter).some(Boolean);
+  // In Junk the junk action is "Not junk" (back to the inbox) — engine messages_junk with junk=false.
+  const junkView = (view.kind === "unified" && view.unified === "junk") || folder?.role === "junk";
 
   return (
     <section aria-label={`${title} messages`} className="flex h-full min-w-0 flex-col bg-surface">
@@ -89,7 +91,7 @@ export function MessageList() {
       </header>
 
       {folder && canEmpty(folder) && list.total > 0 && <EmptyFolderStrip folder={folder} account={account} />}
-      {selected.length > 1 && <BulkBar count={selected.length} />}
+      {selected.length > 1 && <BulkBar count={selected.length} junkView={junkView} />}
 
       <div
         ref={parentRef}
@@ -127,7 +129,7 @@ export function MessageList() {
               const m = list.items[vi.index];
               return (
                 <div key={m.id} style={{ position: "absolute", top: 0, left: 0, right: 0, height: vi.size, transform: `translateY(${vi.start + (layout === "table" ? 28 : 0)}px)` }}>
-                  <Row m={m} layout={layout} compact={compact} selected={selectedSet.has(m.id)} isCursor={cursor === m.id} showAccount={showAccount} isDraft={isDraftView} highlight={highlight} />
+                  <Row m={m} layout={layout} compact={compact} selected={selectedSet.has(m.id)} isCursor={cursor === m.id} showAccount={showAccount} isDraft={isDraftView} highlight={highlight} junkView={junkView} />
                 </div>
               );
             })}
@@ -251,7 +253,7 @@ function QuickFilter() {
   );
 }
 
-function BulkBar({ count }: { count: number }) {
+function BulkBar({ count, junkView }: { count: number; junkView: boolean }) {
   return (
     <div role="toolbar" aria-label={`${count} messages selected`} className="flex items-center gap-1 border-b border-border bg-select px-3 py-1.5">
       <span className="mr-2 text-xs font-semibold tabular-nums">{count} selected</span>
@@ -259,7 +261,9 @@ function BulkBar({ count }: { count: number }) {
       <IconButton label="Delete" shortcut="Del" size="iconSm" onClick={() => A.trash()}><Trash2 /></IconButton>
       <IconButton label="Mark read / unread" shortcut="U" size="iconSm" onClick={() => A.toggleRead()}><MailOpen /></IconButton>
       <IconButton label="Star" shortcut="S" size="iconSm" onClick={() => A.toggleFlag()}><Star /></IconButton>
-      <IconButton label="Junk" shortcut="!" size="iconSm" onClick={() => A.junk(true)}><ShieldAlert /></IconButton>
+      {junkView
+        ? <IconButton label="Not junk" size="iconSm" onClick={() => A.junk(false)}><ShieldCheck /></IconButton>
+        : <IconButton label="Junk" shortcut="!" size="iconSm" onClick={() => A.junk(true)}><ShieldAlert /></IconButton>}
       <Menu.Root>
         <Menu.Trigger asChild><Button variant="ghost" size="sm"><AlarmClock /> Snooze</Button></Menu.Trigger>
         <Menu.Content><SnoozeItems kind="menu" onPick={() => window.dispatchEvent(new CustomEvent("wm:snooze-pick"))} /></Menu.Content>
@@ -275,11 +279,12 @@ function BulkBar({ count }: { count: number }) {
 }
 
 const Row = React.memo(function Row({
-  m, layout, compact, selected, isCursor, showAccount, isDraft, highlight,
-}: { m: MessageSummary; layout: "multiline" | "table"; compact: boolean; selected: boolean; isCursor: boolean; showAccount: boolean; isDraft: boolean; highlight: boolean }) {
+  m, layout, compact, selected, isCursor, showAccount, isDraft, highlight, junkView,
+}: { m: MessageSummary; layout: "multiline" | "table"; compact: boolean; selected: boolean; isCursor: boolean; showAccount: boolean; isDraft: boolean; highlight: boolean; junkView: boolean }) {
   const tags = useStore((s) => s.tags);
   const account = accountById(m.accountId);
   const unread = !m.flags.seen || m.threadUnread > 0;
+  const starred = A.isStarred(m);
   // A person's mail: the engine's person flag (not bulk or machine mail, or from someone this account writes to).
   const person = highlight && m.person;
   const bulk = highlight && !m.person;
@@ -319,18 +324,26 @@ const Row = React.memo(function Row({
       <IconButton label={unread ? "Mark as read" : "Mark as unread"} shortcut="U" size="iconSm" onClick={(e) => { e.stopPropagation(); void A.toggleRead([m.id]); }}>
         {unread ? <MailOpen /> : <Mail />}
       </IconButton>
+      <IconButton label={starred ? "Unstar" : "Star"} shortcut="S" size="iconSm" aria-pressed={starred} onClick={(e) => { e.stopPropagation(); void A.toggleFlag([m.id]); }}>
+        <Star className={cn(starred && "fill-[var(--iw-warn-text)] text-[var(--iw-warn-text)]")} />
+      </IconButton>
+      {junkView ? (
+        <IconButton label="Not junk" size="iconSm" onClick={(e) => { e.stopPropagation(); void A.junk(false, [m.id]); }}><ShieldCheck /></IconButton>
+      ) : (
+        <IconButton label="Move to junk" shortcut="!" size="iconSm" onClick={(e) => { e.stopPropagation(); void A.junk(true, [m.id]); }}><ShieldAlert /></IconButton>
+      )}
     </div>
   );
 
   const star = (
     <button
       type="button"
-      aria-label={m.flags.flagged ? "Unstar" : "Star"}
-      aria-pressed={m.flags.flagged}
+      aria-label={starred ? "Unstar" : "Star"}
+      aria-pressed={starred}
       onClick={(e) => { e.stopPropagation(); void A.toggleFlag([m.id]); }}
-      className={cn("flex size-6 items-center justify-center rounded hover:bg-accent", m.flags.flagged ? "text-[var(--iw-warn-text)]" : "text-muted-foreground/50 opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
+      className={cn("flex size-6 shrink-0 items-center justify-center rounded hover:bg-accent", starred ? "text-[var(--iw-warn-text)]" : "text-muted-foreground/50 opacity-0 group-hover:opacity-100 focus-visible:opacity-100")}
     >
-      <Star className={cn("size-4", m.flags.flagged && "fill-current")} />
+      <Star className={cn("size-4", starred && "fill-current")} />
     </button>
   );
 
@@ -428,7 +441,7 @@ const Row = React.memo(function Row({
           {hover}
         </div>
       </Ctx.Trigger>
-      <RowMenu m={m} isDraft={isDraft} iwMatch={iwMatch} />
+      <RowMenu m={m} isDraft={isDraft} iwMatch={iwMatch} junkView={junkView} />
     </Ctx.Root>
   );
 });
@@ -452,7 +465,7 @@ function IwBadge({ match }: { match: IwMatch }) {
   );
 }
 
-function RowMenu({ m, isDraft, iwMatch }: { m: MessageSummary; isDraft: boolean; iwMatch: IwMatch | null | undefined }) {
+function RowMenu({ m, isDraft, iwMatch, junkView }: { m: MessageSummary; isDraft: boolean; iwMatch: IwMatch | null | undefined; junkView: boolean }) {
   const tags = useStore((s) => s.tags);
   const iwConnected = useStore((s) => !!s.iw?.connected);
   const lastUndo = useStore((s) => s.lastUndo);
@@ -469,7 +482,7 @@ function RowMenu({ m, isDraft, iwMatch }: { m: MessageSummary; isDraft: boolean;
       <Ctx.Separator />
       <Ctx.Item shortcut="E" onSelect={() => A.archive()}><Archive /> Archive</Ctx.Item>
       <Ctx.Item shortcut="U" onSelect={() => A.toggleRead()}>{unread ? <MailOpen /> : <Mail />} {unread ? "Mark as read" : "Mark as unread"}</Ctx.Item>
-      <Ctx.Item shortcut="S" onSelect={() => A.toggleFlag()}><Star /> {m.flags.flagged ? "Unstar" : "Star"}</Ctx.Item>
+      <Ctx.Item shortcut="S" onSelect={() => A.toggleFlag()}><Star /> {A.isStarred(m) ? "Unstar" : "Star"}</Ctx.Item>
       <Ctx.Sub label="Tag" icon={<TagIcon />}>
         {tags.map((t, i) => (
           <Ctx.Item key={t.key} shortcut={i < 9 ? String(i + 1) : undefined} onSelect={() => A.toggleTag(t.key)}>
@@ -507,7 +520,9 @@ function RowMenu({ m, isDraft, iwMatch }: { m: MessageSummary; isDraft: boolean;
       <Ctx.Sub label="Move to" icon={<FolderInput />}><MoveMenuItems kind="ctx" onPick={(fid) => A.moveTo(fid)} /></Ctx.Sub>
       <Ctx.Sub label="Copy to" icon={<FolderInput />}><MoveMenuItems kind="ctx" onPick={(fid) => A.copyTo(fid)} /></Ctx.Sub>
       <Ctx.Separator />
-      <Ctx.Item shortcut="!" onSelect={() => A.junk(true)}><ShieldAlert /> Mark as junk</Ctx.Item>
+      {junkView
+        ? <Ctx.Item onSelect={() => A.junk(false)}><ShieldCheck /> Not junk</Ctx.Item>
+        : <Ctx.Item shortcut="!" onSelect={() => A.junk(true)}><ShieldAlert /> Move to junk</Ctx.Item>}
       <Ctx.Item danger shortcut="Del" onSelect={() => A.trash()}><Trash2 /> Delete</Ctx.Item>
     </Ctx.Content>
   );

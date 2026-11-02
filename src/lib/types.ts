@@ -38,6 +38,8 @@ export type MessageSummary = {
   subject: string; from: Address; to: Address[]; cc: Address[]; date: number;
   snippet: string; flags: Flags; tags: string[]; hasAttachments: boolean; size: number;
   threadCount: number; threadUnread: number;
+  /** Some message of the conversation is starred, not only the newest one this row is (engine msgstore list_view). */
+  threadFlagged?: boolean;
   snoozedUntil?: number; // unix ms; set while snoozed on this computer
   /** Written by a person — not a newsletter, advert, notification or other bulk mail, or from someone this account writes to (engine msgstore SUMMARY_COLS). */
   person?: boolean;

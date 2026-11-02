@@ -56,6 +56,7 @@ type MessageSummary = {
   snippet: string; flags: Flags; tags: string[]; hasAttachments: boolean; size: number;
   threadCount: number;        // messages in this thread inside the current view (1 when not threaded)
   threadUnread: number;
+  threadFlagged: boolean;     // some message of the thread inside the view is starred (the row is only its newest message)
   person: boolean;      // written by a person: not bulk/machine mail (List-*, Precedence, Auto-Submitted, Feedback-ID, no-reply senders,
                         // Gmail's Promotions/Social/Updates/Forums, Outlook's "Other"), or from someone this account has written to
 };

@@ -151,8 +151,8 @@ function Toolbar({ row, latestId, maximized, onToggleMax, iwPanel, iwConnected }
           ))}
         </Menu.Content>
       </Menu.Root>
-      <IconButton label={row.flags.flagged ? "Unstar" : "Star"} shortcut="S" onClick={() => A.toggleFlag([row.id])}>
-        <Star className={cn(row.flags.flagged && "fill-[var(--iw-warn-text)] text-[var(--iw-warn-text)]")} />
+      <IconButton label={A.isStarred(row) ? "Unstar" : "Star"} shortcut="S" onClick={() => A.toggleFlag([row.id])}>
+        <Star className={cn(A.isStarred(row) && "fill-[var(--iw-warn-text)] text-[var(--iw-warn-text)]")} />
       </IconButton>
       <IconButton label="Mark as unread" shortcut="U" onClick={() => A.setRead(false, [row.id])}><MailOpen /></IconButton>
       {row.snoozedUntil ? (

@@ -110,13 +110,19 @@ export async function toggleRead(ids?: string[]) {
   await setRead(anyUnread, t.map((m) => m.id));
 }
 
+/** A row shows a star when the conversation has one: its newest message, or an older one (threadFlagged). */
+export const isStarred = (m: MessageSummary) => m.flags.flagged || !!m.threadFlagged;
+
+/** Star stars the row's own (newest) message; Unstar clears every starred message of the conversation, or a thread
+ *  starred on an older message would keep its star after Unstar. */
 export async function toggleFlag(ids?: string[]) {
   const t = targets(ids);
   if (!t.length) return;
-  const flag = t.some((m) => !m.flags.flagged);
+  const flag = t.some((m) => !isStarred(m));
   const idList = t.map((m) => m.id);
-  patchRows(idList, (m) => ({ ...m, flags: { ...m.flags, flagged: flag } }));
-  await guarded("Couldn't star", () => (flag ? api.setFlags(idList, ["flagged"], []) : api.setFlags(idList, [], ["flagged"])));
+  patchRows(idList, (m) => ({ ...m, flags: { ...m.flags, flagged: flag }, threadFlagged: flag }));
+  await guarded(flag ? "Couldn't star" : "Couldn't unstar", async () =>
+    flag ? api.setFlags(idList, ["flagged"], []) : api.setFlags(await conversationIds(t), [], ["flagged"]));
 }
 
 export async function toggleTag(tag: string, ids?: string[]) {

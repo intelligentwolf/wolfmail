@@ -229,6 +229,7 @@ pub fn row_to_summary(r: &Row<'_>, thread_count: i64, thread_unread: i64) -> rus
     let keywords: Vec<String> = serde_json::from_str(&kw).unwrap_or_default();
     let to: String = r.get(8)?;
     let cc: String = r.get(9)?;
+    let flagged: bool = r.get(13)?;
     Ok(MessageSummary {
         id: r.get::<_, i64>(0)?.to_string(),
         account_id: r.get(1)?,
@@ -241,12 +242,13 @@ pub fn row_to_summary(r: &Row<'_>, thread_count: i64, thread_unread: i64) -> rus
         cc: serde_json::from_str(&cc).unwrap_or_default(),
         date: r.get(10)?,
         snippet: r.get(11)?,
-        flags: Flags { seen: r.get(12)?, flagged: r.get(13)?, answered: r.get(14)?, forwarded: r.get(15)?, draft: r.get(16)? },
+        flags: Flags { seen: r.get(12)?, flagged, answered: r.get(14)?, forwarded: r.get(15)?, draft: r.get(16)? },
         tags: keywords,
         has_attachments: r.get(18)?,
         size: r.get(19)?,
         thread_count,
         thread_unread,
+        thread_flagged: flagged,
         snoozed_until: r.get(20)?,
         person: r.get(21)?,
     })
@@ -402,10 +404,11 @@ pub fn list_view(conn: &Connection, q: &ViewQuery) -> Result<MessagePage> {
             "WITH r AS (SELECT m.id, m.date,
                                ROW_NUMBER() OVER w AS rn,
                                COUNT(*) OVER (PARTITION BY m.account_id, m.thread_id) AS n,
-                               SUM(m.seen=0) OVER (PARTITION BY m.account_id, m.thread_id) AS unread
+                               SUM(m.seen=0) OVER (PARTITION BY m.account_id, m.thread_id) AS unread,
+                               MAX(m.flagged) OVER (PARTITION BY m.account_id, m.thread_id) AS starred
                         FROM messages m WHERE {where_sql}
                         WINDOW w AS (PARTITION BY m.account_id, m.thread_id ORDER BY m.date DESC, m.id DESC))
-             SELECT {SUMMARY_COLS}, r.n, r.unread FROM r JOIN messages m ON m.id = r.id
+             SELECT {SUMMARY_COLS}, r.n, r.unread, r.starred FROM r JOIN messages m ON m.id = r.id
              WHERE r.rn = 1
              ORDER BY r.date {order}, m.id {order} LIMIT {limit} OFFSET {offset}"
         );
@@ -414,7 +417,10 @@ pub fn list_view(conn: &Connection, q: &ViewQuery) -> Result<MessagePage> {
             .query_map(params_from_iter(ps.iter()), |r| {
                 let n: i64 = r.get(SUMMARY_NEXT)?;
                 let u: i64 = r.get(SUMMARY_NEXT + 1)?;
-                row_to_summary(r, n, u)
+                let starred: bool = r.get(SUMMARY_NEXT + 2)?;
+                let mut m = row_to_summary(r, n, u)?;
+                m.thread_flagged = starred;
+                Ok(m)
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(MessagePage { total, items })
@@ -458,11 +464,13 @@ pub fn thread_messages(conn: &Connection, account_id: &str, thread_id: &str) -> 
     }
     let n = out.len() as i64;
     let unread = out.iter().filter(|(m, _)| !m.flags.seen).count() as i64;
+    let starred = out.iter().any(|(m, _)| m.flags.flagged);
     Ok(out
         .into_iter()
         .map(|(mut m, _)| {
             m.thread_count = n;
             m.thread_unread = unread;
+            m.thread_flagged = starred;
             m
         })
         .collect())
@@ -619,6 +627,18 @@ mod tests {
             let t = thread_messages(c, "a", &page.items[0].thread_id)?;
             assert_eq!(t.len(), 2);
             assert_eq!(t[0].subject, "Plan");
+            assert!(!page.items[0].thread_flagged);
+            // Star the OLDER message: the conversation row (the newest message) shows the star, the Starred filter finds it.
+            update_flags(c, 1, 1, &ParsedFlags { flags: Flags { seen: true, flagged: true, ..Default::default() }, ..Default::default() }, None)?;
+            let page2 = list_view(c, &q)?;
+            assert_eq!(page2.items[0].subject, "Re: Plan");
+            assert!(!page2.items[0].flags.flagged && page2.items[0].thread_flagged);
+            assert!(!page2.items[1].thread_flagged);
+            let starred = list_view(c, &ViewQuery { filter: Some(ViewFilter { flagged: Some(true), ..Default::default() }), ..q.clone() })?;
+            assert_eq!(starred.total, 1);
+            assert!(starred.items[0].thread_flagged);
+            assert!(thread_messages(c, "a", &page.items[0].thread_id)?.iter().all(|m| m.thread_flagged));
+            update_flags(c, 1, 1, &ParsedFlags { flags: Flags { seen: true, ..Default::default() }, ..Default::default() }, None)?;
             // Flags + delete.
             update_flags(c, 1, 2, &ParsedFlags { flags: Flags { seen: true, ..Default::default() }, ..Default::default() }, None)?;
             let unread = list_view(c, &ViewQuery { filter: Some(ViewFilter { unread: Some(true), ..Default::default() }), threaded: false, ..q.clone() })?;
