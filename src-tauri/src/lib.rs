@@ -293,6 +293,12 @@ async fn message_load_remote(s: State<'_, AppState>, id: String) -> R<MessageFul
 async fn message_raw(s: State<'_, AppState>, id: String) -> R<String> {
     s.on(move |e| async move { e.message_raw(id).await }).await
 }
+
+/// "This sender is fine" on a message's spoofing warning, or take it back (wolfmail-core safety.rs).
+#[tauri::command]
+async fn message_trust_sender(s: State<'_, AppState>, id: String, trusted: bool) -> R<()> {
+    s.on(move |e| async move { e.message_trust_sender(id, trusted).await }).await
+}
 #[tauri::command]
 async fn messages_set_flags(s: State<'_, AppState>, ids: Vec<String>, add: Vec<String>, remove: Vec<String>) -> R<()> {
     s.on(move |e| async move { e.messages_set_flags(ids, add, remove).await }).await
@@ -631,6 +637,7 @@ pub fn run() {
             message_get,
             message_load_remote,
             message_raw,
+            message_trust_sender,
             messages_set_flags,
             messages_set_tags,
             messages_move,

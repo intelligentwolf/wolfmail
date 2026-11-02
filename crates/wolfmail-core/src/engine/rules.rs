@@ -583,7 +583,7 @@ mod tests {
             thread_unread: 0,
             thread_flagged: false,
             snoozed_until: None,
-            person: true,
+            person: true, risk: 0,
         }
     }
     fn cond(field: FilterField, op: FilterOp, value: &str) -> FilterCondition {

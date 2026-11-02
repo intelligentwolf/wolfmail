@@ -43,7 +43,13 @@ export type MessageSummary = {
   snoozedUntil?: number; // unix ms; set while snoozed on this computer
   /** Written by a person — not a newsletter, advert, notification or other bulk mail, or from someone this account writes to (engine msgstore SUMMARY_COLS). */
   person?: boolean;
+  /** Spoofing / fraud checks (engine safety.rs): 0 none, 1 caution, 2 danger. */
+  risk?: 0 | 1 | 2;
 };
+
+/** One spoofing / fraud warning (engine safety.rs Warning). */
+export type SafetyWarning = { level: "danger" | "caution"; code: string; title: string; detail: string };
+export type Safety = { level: 0 | 1 | 2; warnings: SafetyWarning[]; trusted: boolean; bodyChecked: boolean };
 
 export type Attachment = { id: string; filename: string; mime: string; size: number; inline: boolean; contentId?: string };
 
@@ -56,9 +62,11 @@ export type MessageFull = MessageSummary & {
   authResults?: { spf?: string; dkim?: string; dmarc?: string };
   /** Calendar invitation carried by the message (pimTypes.ts Invite). */
   invite?: import("./pimTypes").Invite;
+  /** Spoofing / fraud warnings for this message, worked out when it was opened. */
+  safety?: Safety;
 };
 
-export type UnifiedView = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "flagged" | "unread" | "snoozed";
+export type UnifiedView = "inbox" | "sent" | "drafts" | "trash" | "junk" | "archive" | "flagged" | "unread" | "snoozed" | "suspicious";
 export type ViewFilter = { unread?: boolean; flagged?: boolean; attachments?: boolean; tag?: string; fromContact?: string };
 export type ViewQuery = {
   folderId?: string; unified?: UnifiedView; filter?: ViewFilter; search?: string;

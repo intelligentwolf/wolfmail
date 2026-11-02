@@ -62,6 +62,7 @@ export const api = {
   messageGet: (id: string) => call<MessageFull>("message_get", { id }),
   messageLoadRemote: (id: string) => call<MessageFull>("message_load_remote", { id }),
   messageRaw: (id: string) => call<string>("message_raw", { id }),
+  trustSender: (id: string, trusted: boolean) => call<null>("message_trust_sender", { id, trusted }),
   setFlags: (ids: string[], add: FlagName[], remove: FlagName[]) => call<null>("messages_set_flags", { ids, add, remove }),
   setTags: (ids: string[], add: string[], remove: string[]) => call<null>("messages_set_tags", { ids, add, remove }),
   move: (ids: string[], folderId: string) => call<null>("messages_move", { ids, folderId }),

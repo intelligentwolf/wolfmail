@@ -2,7 +2,7 @@ import * as React from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Archive, Trash2, Star, Paperclip, MailOpen, Mail, Search, X, Inbox, SearchX, AlertTriangle, CornerUpLeft, Forward,
-  Tag as TagIcon, FolderInput, ShieldAlert, ShieldCheck, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus, Sparkles, Undo2,
+  Tag as TagIcon, FolderInput, ShieldAlert, ShieldCheck, Filter, CheckSquare, RefreshCw, AlarmClock, AlarmClockOff, UserRound, UserPlus, UserPen, ExternalLink, BookmarkPlus, Sparkles, Undo2, ShieldX,
 } from "lucide-react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { notify } from "../../lib/notify";
@@ -25,7 +25,7 @@ import { EmptyFolderStrip, canEmpty } from "./EmptyFolder";
 import { LayoutMenu } from "../layout/LayoutMenu";
 
 const viewTitles: Record<string, string> = {
-  inbox: "All inboxes", unread: "Unread", snoozed: "Snoozed", flagged: "Starred", drafts: "Drafts", sent: "Sent", archive: "Archive", junk: "Junk", trash: "Trash",
+  inbox: "All inboxes", unread: "Unread", snoozed: "Snoozed", flagged: "Starred", drafts: "Drafts", sent: "Sent", archive: "Archive", junk: "Junk", trash: "Trash", suspicious: "Looks fake",
 };
 
 export function MessageList() {
@@ -114,7 +114,10 @@ export function MessageList() {
               body={search ? `Nothing in ${title} matches “${search}”.` : "Nothing here matches the filters you picked."}
               action={<Button variant="outline" onClick={() => { setSearch(""); setFilter({}); }}>Clear filters</Button>} />
           ) : (
-            view.kind === "unified" && view.unified === "snoozed" ? (
+            view.kind === "unified" && view.unified === "suspicious" ? (
+              <EmptyState icon={<ShieldCheck className="size-6" />} title="Nothing looks fake"
+                body="WolfMail checks every email for spoofed senders, lookalike domains, fake links, changed bank details and dangerous attachments. Anything it's unsure about shows up here." />
+            ) : view.kind === "unified" && view.unified === "snoozed" ? (
               <EmptyState icon={<AlarmClock className="size-6" />} title="Nothing snoozed"
                 body="Snooze a conversation (press B, or right-click it) and it disappears until the time you choose, then comes back unread." />
             ) : (
@@ -360,6 +363,7 @@ const Row = React.memo(function Row({
           {dot}{unreadSr}
           {showAccount && account && <span aria-hidden className="size-2 shrink-0 rounded-full" style={{ background: account.color }} />}
           <span className="truncate">{who}</span>
+          {!!m.risk && <RiskBadge risk={m.risk} />}
           {iwMatch && <IwBadge match={iwMatch} />}
           {m.threadCount > 1 && <span className="shrink-0 text-[11px] text-muted-foreground tabular-nums">{m.threadCount}</span>}
         </span>
@@ -387,6 +391,7 @@ const Row = React.memo(function Row({
             {dot}{unreadSr}
             <span className={cn("min-w-0 truncate text-[13.5px]", tone)}>{who}</span>
             {person && <span className="sr-only">(from a person)</span>}
+            {!!m.risk && <RiskBadge risk={m.risk} />}
             {iwMatch && <IwBadge match={iwMatch} />}
             {m.threadCount > 1 && (
               <span className="shrink-0 rounded-full bg-surface-raised px-1.5 text-[11px] font-medium tabular-nums text-muted-foreground ring-1 ring-border">{m.threadCount}</span>
@@ -459,6 +464,19 @@ async function logToCrm(id: string, match: IwMatch | null) {
     invalidatePeople();   // a new lead changes who is highlighted; only the rows on screen ask again
     notify.ok(match ? `Logged to ${match.name}'s history in IntelligentWolf` : "Logged — a new lead was created in IntelligentWolf");
   } catch (e) { notify.error(e, "Couldn't log the email to IntelligentWolf"); }
+}
+
+/** The spoofing / fraud checks' mark on a row (engine safety.rs): an icon and a word, never colour alone (WCAG 1.4.1). */
+function RiskBadge({ risk }: { risk: 1 | 2 }) {
+  const danger = risk === 2;
+  return (
+    <span title={danger ? "WolfMail thinks this email may be fake — open it to see why" : "Something about this email needs a second look — open it to see what"}
+      className={cn("inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-px text-[10.5px] font-semibold ring-1 ring-inset",
+        danger ? "bg-[var(--iw-red-wash)] text-[var(--iw-red-text)] ring-[var(--iw-red)]/40" : "text-[var(--iw-warn-text)] ring-[var(--iw-warn)]/50")}>
+      {danger ? <ShieldX aria-hidden className="size-3" /> : <ShieldAlert aria-hidden className="size-3" />}
+      {danger ? "Looks fake" : "Check"}
+    </span>
+  );
 }
 
 /** "In IntelligentWolf" marker on a row: the person's kind in words, never colour alone (WCAG 1.4.1). */

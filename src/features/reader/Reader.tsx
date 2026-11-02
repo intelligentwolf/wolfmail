@@ -3,7 +3,7 @@ import { save } from "@tauri-apps/plugin-dialog";
 import {
   Archive, Trash2, CornerUpLeft, ReplyAll, Forward, Star, MailOpen, ShieldAlert, MoreHorizontal, FolderInput, Tag as TagIcon, Undo2,
   Paperclip, Download, ExternalLink, ImageOff, ShieldCheck, Code, BellOff, ChevronDown, Mail, PanelRightOpen, PanelRightClose,
-  FileText, FileImage, FileArchive, FileSpreadsheet, Maximize2, Minimize2, AlarmClock, AlarmClockOff,
+  FileText, FileImage, FileArchive, FileSpreadsheet, Maximize2, Minimize2, AlarmClock, AlarmClockOff, ShieldX,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
@@ -338,6 +338,10 @@ function MessageCard({ summary, defaultOpen, dark, topRowId, onFlag }: { summary
         </div>
       </div>
 
+      {m?.safety && (m.safety.warnings.length > 0 || m.safety.trusted) && (
+        <SafetyBanner message={m} onChanged={(f) => { setFull(f); patchRows([topRowId], (r) => (r.id === f.id ? { ...r, risk: f.safety?.level ?? 0 } : r)); }} />
+      )}
+
       {m?.listUnsubscribe && (
         <div className="mx-5 mt-3 flex items-center gap-2 text-xs text-muted-foreground">
           <BellOff className="size-3.5" /> This is a mailing list.
@@ -385,6 +389,72 @@ function MessageCard({ summary, defaultOpen, dark, topRowId, onFlag }: { summary
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * What the spoofing / fraud checks found (engine safety.rs), above the email: each problem in plain words with what to
+ * do. A danger is announced (role="alert"); a caution is not. "This sender is fine" stops the sender's warnings (bank
+ * detail and attachment warnings stay — they are about this email), with Undo; a sender marked fine says so, with Undo.
+ */
+function SafetyBanner({ message: m, onChanged }: { message: MessageFull; onChanged: (f: MessageFull) => void }) {
+  const s = m.safety!;
+  const [busy, setBusy] = React.useState(false);
+  const setTrusted = async (trusted: boolean, undoable: boolean) => {
+    setBusy(true);
+    try {
+      await api.trustSender(m.id, trusted);
+      onChanged(await api.messageGet(m.id));
+      if (undoable) {
+        notify.ok(trusted ? `Marked ${m.from.email} as fine` : `${m.from.email} will be checked again`, {
+          action: { label: "Undo", onClick: () => { void setTrusted(!trusted, false); } },
+          duration: 8000,
+        });
+      }
+    } catch (e) {
+      notify.error(e, trusted ? "Couldn't mark the sender as fine" : "Couldn't undo");
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (s.warnings.length === 0) {
+    return (
+      <div className="mx-5 mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <ShieldCheck className="size-3.5" aria-hidden /> You marked this sender as fine.
+        <button type="button" disabled={busy} className="font-medium text-[var(--iw-red-text)] hover:underline disabled:opacity-60" onClick={() => void setTrusted(false, true)}>Check them again</button>
+      </div>
+    );
+  }
+  const danger = s.level === 2;
+  return (
+    <section
+      role={danger ? "alert" : undefined}
+      aria-label={danger ? "This email may be fake" : "Check this email"}
+      className={cn("mx-5 mt-3 rounded-lg px-3 py-2.5 text-[13px] ring-1",
+        danger ? "bg-[var(--iw-red-wash)] text-[var(--iw-red-text)] ring-[var(--iw-red)]/40" : "bg-surface-raised text-foreground ring-[var(--iw-warn)]/60")}
+    >
+      <div className="flex items-center gap-2 font-semibold">
+        {danger ? <ShieldX className="size-4 shrink-0" aria-hidden /> : <ShieldAlert className="size-4 shrink-0 text-[var(--iw-warn-text)]" aria-hidden />}
+        {danger ? "This email may be fake" : "Check this email before you act on it"}
+      </div>
+      <ul className="mt-1.5 space-y-1.5 pl-6">
+        {s.warnings.map((w) => (
+          <li key={w.code + w.title}>
+            <span className="font-medium">{w.title}.</span>{" "}
+            <span className={danger ? "" : "text-muted-foreground"}>{w.detail}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2 flex flex-wrap items-center gap-2 pl-6">
+        {danger && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => void A.junk(true, [m.id])}><ShieldAlert /> Move to junk</Button>
+        )}
+        {!s.trusted && (
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void setTrusted(true, true)}>{busy && <Spinner />} This sender is fine</Button>
+        )}
+        {!s.bodyChecked && <span className="text-xs text-muted-foreground">Only the sender details were checked — the email's text hadn't downloaded yet.</span>}
+      </div>
+    </section>
   );
 }
 

@@ -265,6 +265,28 @@ const MIGRATIONS: &[&str] = &[
              WHERE m.id = NEW.message_rowid AND json_extract(j.value, '$.email') IS NOT NULL;
     END;
     "#,
+    // v5 — spoofing and fraud checks (safety.rs; Paul, 2 Nov 2026: "scan emails in wolfmail for spoofing etc"). Each
+    // message's level (0 none, 1 caution, 2 danger) for the list and the "Looks fake" view, worked out in the background;
+    // senders the person said are fine; bank details earlier mail from a domain carried, to compare later invoices with.
+    r#"
+    ALTER TABLE messages ADD COLUMN risk INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE messages ADD COLUMN risk_checked INTEGER NOT NULL DEFAULT 0;
+    CREATE INDEX messages_risky ON messages(date) WHERE risk > 0;
+    CREATE INDEX messages_unchecked ON messages(date, id) WHERE risk_checked = 0 OR (risk_checked = 1 AND body_cached = 1);
+    CREATE TABLE safe_senders (
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        email TEXT NOT NULL,
+        PRIMARY KEY(account_id, email)
+    ) WITHOUT ROWID;
+    CREATE TABLE bank_seen (
+        account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+        domain TEXT NOT NULL,
+        detail TEXT NOT NULL,
+        first_date INTEGER NOT NULL,
+        message_rowid INTEGER NOT NULL,
+        PRIMARY KEY(account_id, domain, detail)
+    ) WITHOUT ROWID;
+    "#,
 ];
 
 #[derive(Clone)]

@@ -249,6 +249,9 @@ pub struct MessageSummary {
     /// Written by a person, not bulk or machine mail — the list highlights it (msgstore SUMMARY_COLS).
     #[serde(default)]
     pub person: bool,
+    /// Spoofing / fraud checks (safety.rs): 0 none, 1 caution, 2 danger — the list's warning mark.
+    #[serde(default)]
+    pub risk: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -311,6 +314,9 @@ pub struct MessageFull {
     /// Calendar invitation carried by this message (pim/itip.rs), filled in by message_get.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invite: Option<crate::pim::model::Invite>,
+    /// Spoofing / fraud warnings for the reading pane (safety.rs), worked out when the message is opened.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub safety: Option<crate::safety::Safety>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -326,6 +332,8 @@ pub enum UnifiedView {
     Unread,
     /// Messages snoozed on this computer (engine/rules.rs).
     Snoozed,
+    /// Mail the spoofing / fraud checks marked (safety.rs), outside Trash and Junk.
+    Suspicious,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -1,7 +1,7 @@
 import * as React from "react";
 import {
   Inbox, Send, FileText, Trash2, ShieldAlert, Archive, Star, MailOpen, Folder as FolderIcon, ChevronRight, PenSquare,
-  Plus, Settings as SettingsIcon, LayoutGrid, AlarmClock, Filter, RefreshCw, AlertTriangle, WifiOff, Mails, CheckCheck, FolderPlus, Pencil, Upload, PanelLeftClose,
+  Plus, Settings as SettingsIcon, LayoutGrid, AlarmClock, Filter, RefreshCw, AlertTriangle, WifiOff, Mails, CheckCheck, FolderPlus, Pencil, Upload, PanelLeftClose, ShieldX,
 } from "lucide-react";
 import { useStore, getState, setView, toggleCollapsed, togglePanel, setUi, openComposer, refreshFolders } from "../../lib/store";
 import { moveTo, copyTo } from "../actions";
@@ -27,6 +27,7 @@ const unifiedItems: { id: UnifiedView; label: string; icon: React.ComponentType<
   { id: "inbox", label: "All inboxes", icon: Inbox },
   { id: "unread", label: "Unread", icon: MailOpen },
   { id: "flagged", label: "Starred", icon: Star },
+  { id: "suspicious", label: "Looks fake", icon: ShieldX },
   { id: "drafts", label: "Drafts", icon: FileText },
   { id: "sent", label: "Sent", icon: Send },
   { id: "archive", label: "Archive", icon: Archive },

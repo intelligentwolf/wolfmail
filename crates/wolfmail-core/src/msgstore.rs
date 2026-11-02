@@ -215,14 +215,15 @@ pub fn delete_row(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
-/// Columns 0–21 read by `row_to_summary` (20 = snoozed_until, 21 = person). Queries that add their own columns after
-/// these start reading at index 22 (SUMMARY_NEXT).
+/// Columns 0–22 read by `row_to_summary` (20 = snoozed_until, 21 = person, 22 = risk). Queries that add their own columns
+/// after these start reading at index 23 (SUMMARY_NEXT).
 /// person: written by a person — not bulk or machine mail (mime::is_bulk), or from someone this account has written to.
 pub const SUMMARY_COLS: &str = "m.id, m.account_id, m.folder_id, m.thread_id, m.message_id, m.subject, m.from_name, m.from_email,
     m.to_json, m.cc_json, m.date, m.snippet, m.seen, m.flagged, m.answered, m.forwarded, m.draft, m.keywords,
     m.has_attachments, m.size, (SELECT sz.until_ms FROM snoozes sz WHERE sz.message_rowid = m.id),
-    (m.bulk = 0 OR EXISTS (SELECT 1 FROM correspondents cr WHERE cr.account_id = m.account_id AND cr.email = m.from_email))";
-pub const SUMMARY_NEXT: usize = 22;
+    (m.bulk = 0 OR EXISTS (SELECT 1 FROM correspondents cr WHERE cr.account_id = m.account_id AND cr.email = m.from_email)),
+    m.risk";
+pub const SUMMARY_NEXT: usize = 23;
 
 pub fn row_to_summary(r: &Row<'_>, thread_count: i64, thread_unread: i64) -> rusqlite::Result<MessageSummary> {
     let kw: String = r.get(17)?;
@@ -251,6 +252,7 @@ pub fn row_to_summary(r: &Row<'_>, thread_count: i64, thread_unread: i64) -> rus
         thread_flagged: flagged,
         snoozed_until: r.get(20)?,
         person: r.get(21)?,
+        risk: r.get(22)?,
     })
 }
 
@@ -313,6 +315,10 @@ pub fn view_where(q: &ViewQuery) -> Result<(String, Vec<rusqlite::types::Value>)
                     member_of_roles_excluding("'trash','junk','all','flagged'")
                 )),
                 UnifiedView::Snoozed => clauses.push("m.id IN (SELECT message_rowid FROM snoozes)".into()),
+                UnifiedView::Suspicious => clauses.push(format!(
+                    "m.risk > 0 AND {} AND {NOT_IN_TRASH_LABEL}",
+                    member_of_roles_excluding("'trash','junk','all','sent','drafts'")
+                )),
                 UnifiedView::Unread => {
                     let unread = unread_or_kept(&q.keep_ids, &mut ps);
                     clauses.push(format!(
@@ -516,6 +522,7 @@ pub fn assemble_full(conn: &Connection, id: i64, raw: &[u8], allow_remote: bool)
         list_unsubscribe: lu.and_then(|s| serde_json::from_str(&s).ok()),
         auth_results: auth.and_then(|s| serde_json::from_str(&s).ok()),
         invite: None,
+        safety: crate::safety::assess(conn, id, raw).map_err(|e| tracing::warn!("safety checks {id}: {}", e.message)).ok(),
     })
 }
 

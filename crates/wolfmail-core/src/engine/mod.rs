@@ -8,6 +8,7 @@ mod compose;
 mod iwcmds;
 mod messages;
 mod runner;
+mod safety;
 
 use crate::db::Store;
 use crate::error::{ApiError, Result};
@@ -135,6 +136,7 @@ impl Engine {
         }
         compose::spawn_outbox_worker(engine.clone());
         engine.spawn_snoozer();
+        engine.spawn_safety_scanner();
         engine.pim_start_background();
         Ok(engine)
     }

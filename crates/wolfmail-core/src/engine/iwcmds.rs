@@ -359,7 +359,7 @@ mod log_email_tests {
             thread_unread: 0,
             thread_flagged: false,
             snoozed_until: None,
-            person: true,
+            person: true, risk: 0,
         }
     }
     fn body_for(m: &MessageSummary) -> serde_json::Value {
