@@ -8,7 +8,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   X, SlidersHorizontal, BookOpen, PenLine, Users, Tag as TagIcon, Keyboard, Info, Plus, Trash2, Pencil, KeyRound, Download,
-  CheckCircle2, AlertTriangle, Star, Link2Off, ChevronRight,
+  CheckCircle2, AlertTriangle, Star, Link2Off, ChevronRight, Heart,
 } from "lucide-react";
 import { api } from "../../lib/api";
 import { notify } from "../../lib/notify";
@@ -665,6 +665,9 @@ function ShortcutsPage() {
   );
 }
 
+// The same page as the README badge and .github/FUNDING.yml ("github: intelligentwolf").
+const SPONSOR_URL = "https://github.com/sponsors/intelligentwolf";
+
 function AboutPage() {
   const [version, setVersion] = React.useState<string>();
   const [upd, setUpd] = React.useState<UpdateState>({ kind: "idle" });
@@ -685,6 +688,15 @@ function AboutPage() {
           <Button variant="link" className="mt-1 h-auto px-0" onClick={() => openUrl("https://intelligentwolf.com").catch((e) => notify.error(e, "Couldn't open your browser"))}>intelligentwolf.com</Button>
         </div>
       </div>
+      <section aria-labelledby="about-sponsor-title" className="mt-5 rounded-card bg-surface p-5 ring-1 ring-border">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <h3 id="about-sponsor-title" className="text-[13px] font-semibold">Support WolfMail</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">WolfMail is free. If it's useful to you, sponsoring funds its development.</p>
+          </div>
+          <Button variant="outline" onClick={() => openUrl(SPONSOR_URL).catch((e) => notify.error(e, "Couldn't open your browser"))}><Heart /> Sponsor on GitHub</Button>
+        </div>
+      </section>
       <section aria-label="Updates" className="mt-5 rounded-card bg-surface p-5 ring-1 ring-border">
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
