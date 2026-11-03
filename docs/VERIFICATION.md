@@ -49,6 +49,17 @@ blocked when risk-based step-up consent is on. Mail.ReadWrite counts.
 **Status (30 Oct 2026):** the custom domain `intelligentwolf.com` is added. Company verification (verification.microsoft.com): contact and identity verified 29 Oct; business verification in progress on Microsoft's side, ETA 3 Nov 2026 (domain proof: the Namecheap record). Waiting for Microsoft to verify
 IntelligentWolf Ltd as a company (partner program, step 3). When that comes through, do steps 4–6.
 
+**Status (3 Nov 2026):** partner profile verified; Partner One ID `7185972` (PartnerGlobal), linked to tenant
+`053eca9b-85c5-4dd5-93ee-308782260e57`. Step 4 done: app **WolfMail** (client ID kept out of the repo; it is the `WOLFMAIL_MS_CLIENT_ID` secret) with
+every setting below. Step 5 not yet: "Verify and save" keeps failing with Microsoft's "temporary problem with the
+service". Graph Explorer (`POST /applications/{object id}/setVerifiedPublisher`) shows the real error:
+"A verified publisher cannot be added to this application" = **UnableToAddPublisher** (request judged risky;
+Microsoft's fix is to resubmit the next day). Request IDs `0c857d27-149a-44d6-8fee-a85ffb66908a` (18:25:32 UTC)
+and `0a5ccb0e-4a81-4cfb-b644-23d9dd85df6e` (18:43:51 UTC, from a stock Chrome user agent, same result).
+**Step 5 done, 3 Nov 2026 19:56:40 UTC:** the same request from a different network succeeded (204); the app now
+shows verifiedPublisher "IntelligentWolf Ltd" (7185972). Step 6 code change made
+locally: `oauth.rs` no longer carries a built-in Microsoft id (only official builds get it, from the secret or the local ids file); GitHub secret `WOLFMAIL_MS_CLIENT_ID` set 3 Nov 20:07 UTC.
+
 ### Steps
 1. **Custom domain.** In the Entra admin center, open Domain names → Add custom domain → `intelligentwolf.com`.
    Add the TXT record it shows at the DNS host, then click Verify.
@@ -73,7 +84,7 @@ IntelligentWolf Ltd as a company (partner program, step 3). When that comes thro
 5. **Verify.** In Branding & properties → Publisher verification, enter the Partner One ID and click
    **Verify and save**. The blue badge appears on WolfMail's consent prompt.
 6. **Ship it** (code side, after step 5): set the GitHub secret `WOLFMAIL_MS_CLIENT_ID` to the new Application
-   (client) ID, change `MS_DEFAULT_CLIENT_ID` in `oauth.rs` to the same value, and cut a release. People who signed
+   (client) ID and in `~/.config/wolfmail/google-oauth.env`, then cut a release. People who signed
    in through the old app have to sign in once more, because refresh tokens are tied to the client ID that issued
    them.
 
