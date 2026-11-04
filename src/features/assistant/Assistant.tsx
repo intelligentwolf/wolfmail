@@ -22,8 +22,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
  * arrives in the chat; if the chat was closed meanwhile, the wolf shows a badge.
  *
  * He is the same wolf as on the IntelligentWolf floor (sprites from IntelligentWolf public/office/sprites, drawing and
- * motion from src/app/components/call/AlexWolf.tsx and layout/wolfRoam.ts): a slow bob and a blink while idle, a short
- * wander along the bottom of the sidebar, a soft ring while he thinks, his mouth moving as a reply lands. Each message
+ * motion from src/app/components/call/AlexWolf.tsx and layout/wolfRoam.ts): a few slow bobs now and then and a blink
+ * while idle, a short wander along the bottom of the sidebar, a soft ring while he thinks, his mouth moving as a reply
+ * lands. He keeps still while WolfMail isn't the window in front (useWindowActive), and between bobs: anything that
+ * moves makes WebKitGTK paint the whole window every frame (measured 4 Nov 2026: a never-ending bob cost 15-50% of a
+ * core with WolfMail idle in the background). Each message
  * runs as a turn on IntelligentWolf (POST /wolfmail/chat) that WolfMail polls until he has answered.
  */
 
@@ -37,6 +40,10 @@ const PACE = SIZE * 0.9;
 /** Poll a running turn every 2 s, for up to the server's turn timeout (IntelligentWolf's WolfMail routes: WOLFMAIL_TURN_TIMEOUT 600 s). */
 const POLL_MS = 2000;
 const POLL_FOR_MS = 600_000;
+/** Idle bobbing in bursts: two of wm-wolf-bob's 2.6 s cycles (styles/index.css), then still for 10-20 s. */
+const BOB_BURST_MS = 5200;
+const BOB_REST_MIN_MS = 10_000;
+const BOB_REST_SPREAD_MS = 10_000;
 
 type Mode = "idle" | "listening" | "speaking";
 type Action = "walk" | "hop" | "sit" | null;
@@ -67,6 +74,38 @@ function useReducedMotion(): boolean {
   return reduce;
 }
 
+/** True while WolfMail's window is shown and in front (visible and focused). */
+function useWindowActive(): boolean {
+  const read = () => document.visibilityState === "visible" && document.hasFocus();
+  const [active, setActive] = React.useState(read);
+  React.useEffect(() => {
+    const on = () => setActive(read());
+    window.addEventListener("focus", on);
+    window.addEventListener("blur", on);
+    document.addEventListener("visibilitychange", on);
+    return () => {
+      window.removeEventListener("focus", on);
+      window.removeEventListener("blur", on);
+      document.removeEventListener("visibilitychange", on);
+    };
+  }, []);
+  return active;
+}
+
+/** True for BOB_BURST_MS, then false for 10-20 s, over and over while `on`; false while not `on`. */
+function useBursts(on: boolean): boolean {
+  const [bobbing, setBobbing] = React.useState(false);
+  React.useEffect(() => {
+    if (!on) { setBobbing(false); return; }
+    let timer: number | undefined;
+    const rest = () => { setBobbing(false); timer = window.setTimeout(bob, BOB_REST_MIN_MS + Math.random() * BOB_REST_SPREAD_MS); };
+    const bob = () => { setBobbing(true); timer = window.setTimeout(rest, BOB_BURST_MS); };
+    bob();
+    return () => window.clearTimeout(timer);
+  }, [on]);
+  return bobbing;
+}
+
 function useTicker(on: boolean, ms: number, n: number): number {
   const [i, setI] = React.useState(0);
   React.useEffect(() => {
@@ -93,19 +132,20 @@ function useBlink(on: boolean): boolean {
   return shut;
 }
 
-function Wolf({ mode, facing, action }: { mode: Mode; facing: Facing; action: Action }) {
+function Wolf({ mode, facing, action, active }: { mode: Mode; facing: Facing; action: Action; active: boolean }) {
   React.useEffect(warmFrames, []);
   const reduce = useReducedMotion();
   const walking = action === "walk" && facing !== "down" && !reduce;
   const frame = useTicker(walking, WALK_FRAME_MS, WALK_FRAMES);
   // His mouth while a reply lands: open/closed on a 140 ms beat (there is no audio level in text chat).
   const mouth = useTicker(mode === "speaking", 140, 2);
-  const blinking = useBlink(mode !== "speaking" && facing === "down" && !walking);
+  const blinking = useBlink(active && mode !== "speaking" && facing === "down" && !walking);
+  const bobbing = useBursts(active && mode === "idle" && !action);
   const src = walking ? walkSrc(facing as "left" | "right", frame)
     : mode === "speaking" && facing === "down" && mouth === 1 ? TALK_SRC
     : blinking ? BLINK_SRC
     : FACING_SRC[facing];
-  const motion = action === "hop" ? "wm-wolf-hop" : action === "sit" ? "wm-wolf-sit" : action === "walk" ? "" : "wm-wolf-idle";
+  const motion = action === "hop" ? "wm-wolf-hop" : action === "sit" ? "wm-wolf-sit" : action === "walk" ? "" : bobbing ? "wm-wolf-idle" : "";
   return (
     <span className="relative flex h-full w-full items-center justify-center">
       {mode === "listening" && <span aria-hidden className="wm-wolf-listen absolute inset-[6%] rounded-full bg-[var(--iw-red)]/30" />}
@@ -202,7 +242,8 @@ export function Assistant() {
   // A new email opened: offer it again.
   React.useEffect(() => { setShareEmail(true); }, [openRow?.id]);
 
-  const roam = useRoam(show && !open && !hover && !busy && !speaking && !unread);
+  const active = useWindowActive();
+  const roam = useRoam(show && active && !open && !hover && !busy && !speaking && !unread);
 
   const close = React.useCallback(() => { setOpen(false); buttonRef.current?.focus(); }, []);
   React.useEffect(() => {
@@ -338,7 +379,7 @@ export function Assistant() {
         onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)} onFocus={() => setHover(true)} onBlur={() => setHover(false)}
         className="fixed bottom-1 left-2 z-40 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-[var(--iw-red)]"
         style={{ width: SIZE, height: SIZE, transform: `translateX(${roam.x}px)` }}>
-        <Wolf mode={mode} facing={roam.facing} action={roam.action} />
+        <Wolf mode={mode} facing={roam.facing} action={roam.action} active={active} />
         {unread && <span aria-hidden className="absolute right-0.5 top-0.5 size-3 rounded-full bg-[var(--iw-red)] ring-2 ring-surface" />}
       </button>
     </>
